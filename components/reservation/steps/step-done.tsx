@@ -1,0 +1,79 @@
+'use client'
+
+import { CheckCircle2 } from 'lucide-react'
+import { LeafSprig } from '@/components/brand/leaf-sprig'
+import { CtaLink } from '@/components/common/cta-button'
+import { formatDate, formatPrice } from '@/lib/format'
+import type { Estimate, ReservationDraft } from '@/lib/reservation'
+
+interface Props {
+  draft: ReservationDraft
+  estimate: Estimate
+  onRestart: () => void
+}
+
+export function StepDone({ draft, estimate, onRestart }: Props) {
+  const reference = `VER-${new Date().getFullYear()}-${String(
+    Math.floor(1000 + Math.random() * 9000),
+  )}`
+
+  return (
+    <div className="mx-auto max-w-xl text-center">
+      <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-secondary">
+        <CheckCircle2 className="size-8 text-verde-green" aria-hidden="true" />
+      </div>
+      <h2 className="mt-6 text-balance font-serif text-3xl font-semibold text-verde-deep">
+        Žádost byla odeslána
+      </h2>
+      <p className="mt-3 text-pretty leading-relaxed text-verde-moss">
+        Děkujeme, {draft.owner.firstName || 'milý pejskaři'}. Vaši nezávaznou žádost jsme přijali.
+        Ozveme se vám do 24 hodin na {draft.owner.email || 'váš e-mail'} s potvrzením termínu a
+        pokyny k rezervační záloze.
+      </p>
+
+      <div className="mt-8 rounded-2xl border border-border bg-secondary/50 p-6 text-left">
+        <div className="flex items-center justify-between border-b border-border pb-4">
+          <span className="label-caps text-verde-wood">Číslo žádosti</span>
+          <span className="font-mono text-sm font-semibold text-verde-deep">{reference}</span>
+        </div>
+        <dl className="mt-4 space-y-2.5 text-sm">
+          <div className="flex justify-between gap-3">
+            <dt className="text-verde-moss">Termín</dt>
+            <dd className="font-medium text-verde-deep">
+              {formatDate(draft.arrival)} — {formatDate(draft.departure)}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-verde-moss">Počet psů</dt>
+            <dd className="font-medium text-verde-deep">{estimate.dogCount}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-verde-moss">Orientační cena</dt>
+            <dd className="font-medium text-verde-deep">{formatPrice(estimate.total)}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="mt-6 flex justify-center">
+        <LeafSprig className="h-5 w-auto text-verde-green" />
+      </div>
+
+      <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <CtaLink href="/" size="md">
+          Zpět na úvod
+        </CtaLink>
+        <button
+          type="button"
+          onClick={onRestart}
+          className="inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium text-verde-moss transition-colors hover:text-verde-green"
+        >
+          Vytvořit další žádost
+        </button>
+      </div>
+
+      <p className="mt-8 text-xs text-verde-stone">
+        Toto je ukázková rezervace — žádná data se neukládají ani neodesílají.
+      </p>
+    </div>
+  )
+}

@@ -1,0 +1,32 @@
+import { PillarIcon } from '@/components/brand/pillar-icon'
+import { pillars } from '@/content/home'
+
+export function Pillars() {
+  return (
+    <section className="bg-primary text-primary-foreground" aria-label="Naše hodnoty">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-16 lg:px-8">
+        <ul className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
+          {pillars.map((pillar, i) => (
+            <li
+              key={pillar.title}
+              className="flex flex-col items-center gap-4 text-center lg:border-l lg:border-verde-white/15 lg:px-4 lg:first:border-l-0"
+              style={{ borderColor: i === 0 ? 'transparent' : undefined }}
+            >
+              <span className="flex size-12 items-center justify-center rounded-full border border-verde-white/25">
+                <PillarIcon name={pillar.icon} className="size-5 text-verde-white" />
+              </span>
+              <div className="space-y-1.5">
+                <h3 className="font-serif text-base font-semibold uppercase tracking-[0.12em] text-verde-white">
+                  {pillar.title}
+                </h3>
+                <p className="text-sm leading-relaxed text-verde-white/70">
+                  {pillar.description}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )
+}

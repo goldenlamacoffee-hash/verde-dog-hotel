@@ -1,0 +1,155 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Brand tokens */
+  --color-verde-green: var(--verde-green);
+  --color-verde-deep: var(--verde-deep);
+  --color-verde-ivory: var(--verde-ivory);
+  --color-verde-stone: var(--verde-stone);
+  --color-verde-moss: var(--verde-moss);
+  --color-verde-wood: var(--verde-wood);
+  --color-verde-charcoal: var(--verde-charcoal);
+  --color-verde-white: var(--verde-white);
+
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-cormorant), ui-serif, Georgia, serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  color-scheme: light;
+
+  --verde-green: #234d2e;
+  --verde-deep: #163a22;
+  --verde-ivory: #e8e0d1;
+  --verde-stone: #b8b2a1;
+  --verde-moss: #566049;
+  --verde-wood: #8a6a44;
+  --verde-charcoal: #22271c;
+  --verde-white: #faf8f2;
+
+  --background: #f1ecdf;
+  --foreground: #163a22;
+
+  --card: #fbf9f3;
+  --card-foreground: #163a22;
+
+  --popover: #fbf9f3;
+  --popover-foreground: #163a22;
+
+  --primary: #234d2e;
+  --primary-foreground: #f4f0e4;
+
+  --secondary: #e3dccb;
+  --secondary-foreground: #234d2e;
+
+  --muted: #e8e1d1;
+  --muted-foreground: #566049;
+
+  --accent: #e3dccb;
+  --accent-foreground: #234d2e;
+
+  --destructive: #8a2b21;
+  --destructive-foreground: #faf8f2;
+
+  --border: #d5cdba;
+  --input: #d5cdba;
+  --ring: #234d2e;
+
+  --radius: 0.75rem;
+}
+
+/* Light-only editorial site: keep dark identical so it never breaks. */
+.dark {
+  color-scheme: light;
+  --background: #f1ecdf;
+  --foreground: #163a22;
+  --card: #fbf9f3;
+  --card-foreground: #163a22;
+  --popover: #fbf9f3;
+  --popover-foreground: #163a22;
+  --primary: #234d2e;
+  --primary-foreground: #f4f0e4;
+  --secondary: #e3dccb;
+  --secondary-foreground: #234d2e;
+  --muted: #e8e1d1;
+  --muted-foreground: #566049;
+  --accent: #e3dccb;
+  --accent-foreground: #234d2e;
+  --destructive: #8a2b21;
+  --destructive-foreground: #faf8f2;
+  --border: #d5cdba;
+  --input: #d5cdba;
+  --ring: #234d2e;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-serif;
+  }
+}
+
+@layer utilities {
+  /* Subtle paper texture for ivory areas */
+  .paper-texture {
+    background-image: radial-gradient(
+        transparent 0,
+        rgba(16, 44, 27, 0.015) 100%
+      ),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  }
+
+  .label-caps {
+    @apply text-xs font-medium uppercase tracking-[0.18em];
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
