@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { computeServerEstimate } from '@/lib/server-pricing'
+import { checkAvailability } from '@/lib/server-availability'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 // ─── Zod validation schema ─────────────────────────────────────────────────────
@@ -110,7 +111,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Maximální délka pobytu je 30 nocí.' }, { status: 422 })
   }
 
-  // 4. Server-side authoritative price calculation
+  // 4. Availability check — must pass before any DB writes
+  const availability = await checkAvailability(
+    draft.arrival,
+    draft.departure,
+    draft.dogCount,
+  )
+  if (!availability.available) {
+    return NextResponse.json(
+      { error: availability.reason ?? 'Požadovaný termín není k dispozici.' },
+      { status: 409 }
+    )
+  }
+
+  // 5. Server-side authoritative price calculation
   const estimate = await computeServerEstimate(
     draft.arrival,
     draft.departure,
@@ -118,11 +132,11 @@ export async function POST(req: NextRequest) {
     draft.selectedServices,
   )
 
-  // 5. Persist to DB using service-role client (bypasses RLS)
+  // 6. Persist to DB using service-role client (bypasses RLS)
   const supabase = createServiceRoleClient()
 
   try {
-    // 5a. Upsert customer
+    // 6a. Upsert customer
     const { data: customer, error: custErr } = await supabase
       .from('customers')
       .upsert(
@@ -143,15 +157,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Chyba při ukládání zákazníka.' }, { status: 500 })
     }
 
-    // 5b. Generate reference number
-    const year = new Date().getFullYear()
-    const { count } = await supabase
-      .from('reservations')
-      .select('id', { count: 'exact', head: true })
-    const seq      = String((count ?? 0) + 1).padStart(4, '0')
-    const refNumber = `VER-${year}-${seq}`
+    // 6b. Generate collision-free reference number via DB sequence
+    const { data: refData, error: refErr } = await supabase
+      .rpc('next_reservation_ref')
+    if (refErr || !refData) {
+      console.error('[verde] ref RPC error:', refErr?.message)
+      return NextResponse.json({ error: 'Chyba při generování čísla rezervace.' }, { status: 500 })
+    }
+    const refNumber = refData as string
 
-    // 5c. Create reservation (using server-computed price)
+    // 6c. Create reservation (using server-computed price)
     const { data: reservation, error: resErr } = await supabase
       .from('reservations')
       .insert({
@@ -175,7 +190,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Chyba při vytváření rezervace.' }, { status: 500 })
     }
 
-    // 5d. Upsert dogs + link to reservation
+    // 6d. Upsert dogs + link to reservation
     for (const dog of draft.dogs) {
       if (!dog.name?.trim()) continue
 
@@ -206,7 +221,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // 5e. Link selected add-on services
+    // 6e. Link selected add-on services
     for (const serviceId of draft.selectedServices) {
       const { data: svc } = await supabase
         .from('services')
@@ -227,6 +242,33 @@ export async function POST(req: NextRequest) {
         unit_price:     svc.price,
         total_price:    qty * svc.price,
       })
+    }
+
+    // 6f. Insert consent records
+    const ip        = getClientIp(req)
+    const userAgent = req.headers.get('user-agent') ?? ''
+    const consentRows = [
+      { type: 'truthfulness',           accepted: draft.consents.truthfulness          },
+      { type: 'stay_conditions',        accepted: draft.consents.stayConditions        },
+      { type: 'cancellation_conditions', accepted: draft.consents.cancellationConditions },
+      { type: 'gdpr',                   accepted: draft.consents.personalData          },
+      { type: 'marketing',              accepted: draft.consents.marketing ?? false    },
+    ].map((c) => ({
+      reservation_id: reservation.id,
+      type:           c.type,
+      accepted:       c.accepted,
+      ip_address:     ip,
+      user_agent:     userAgent,
+    }))
+
+    await supabase.from('consents').insert(consentRows)
+
+    // 6g. Mark customer as GDPR-consented when personalData accepted
+    if (draft.consents.personalData) {
+      await supabase
+        .from('customers')
+        .update({ gdpr_consent: true, gdpr_consent_at: new Date().toISOString() })
+        .eq('id', customer.id)
     }
 
     return NextResponse.json({ refNumber, reservationId: reservation.id }, { status: 201 })
