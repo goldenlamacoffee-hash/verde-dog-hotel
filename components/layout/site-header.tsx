@@ -32,7 +32,7 @@ export function SiteHeader() {
       )}
     >
       <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Logo tone={solid ? 'dark' : 'light'} />
+        <Logo tone={solid ? 'dark' : 'light'} priority />
 
         <nav aria-label="Hlavní navigace" className="hidden lg:block">
           <ul className="flex items-center gap-1">

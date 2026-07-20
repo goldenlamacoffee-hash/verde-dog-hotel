@@ -1,56 +1,51 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { siteSettings } from '@/content/site'
-import { LeafSprig } from './leaf-sprig'
 
 interface LogoProps {
-  /** color variant: dark for light backgrounds, light for dark backgrounds */
+  /** color variant: `dark` = green mark for light backgrounds, `light` = cream mark for dark backgrounds */
   tone?: 'dark' | 'light'
-  /** show the "Psí hotel v srdci přírody" tagline under the wordmark */
-  withTagline?: boolean
+  /** preload the image (use for the above-the-fold header logo) */
+  priority?: boolean
+  /** classes applied to the <img> — override to resize (defaults to h-11 sm:h-12) */
+  imgClassName?: string
   className?: string
 }
 
+const LOGO_SRC = {
+  dark: '/images/verde-logo-green.png',
+  light: '/images/verde-logo-cream.png',
+} as const
+
+// Intrinsic size of the trimmed lockup assets
+const LOGO_W = 1111
+const LOGO_H = 658
+
 /**
- * Refined text-only VERDE wordmark with a small leaf sprig.
- * TODO(brand): replace with the supplied /brand/verde-logo-primary.svg when available.
+ * Primary VERDE logo — engraved wirehaired-pointer head + serif wordmark.
+ * Rendered from transparent-background assets so it sits cleanly on any surface.
  */
-export function Logo({ tone = 'dark', withTagline = false, className }: LogoProps) {
+export function Logo({
+  tone = 'dark',
+  priority = false,
+  imgClassName,
+  className,
+}: LogoProps) {
   return (
     <Link
       href="/"
       aria-label={`${siteSettings.name} — ${siteSettings.tagline}`}
-      className={cn(
-        'group inline-flex flex-col items-center leading-none',
-        tone === 'light' ? 'text-verde-white' : 'text-verde-green',
-        className,
-      )}
+      className={cn('inline-flex items-center', className)}
     >
-      <span className="font-serif text-2xl font-semibold uppercase tracking-[0.22em] sm:text-3xl">
-        Verde
-      </span>
-      {withTagline ? (
-        <span className="mt-1.5 flex items-center gap-2">
-          <span
-            className={cn(
-              'h-px w-6',
-              tone === 'light' ? 'bg-verde-white/50' : 'bg-verde-green/40',
-            )}
-          />
-          <LeafSprig className="h-3.5 w-4" />
-          <span
-            className={cn(
-              'h-px w-6',
-              tone === 'light' ? 'bg-verde-white/50' : 'bg-verde-green/40',
-            )}
-          />
-        </span>
-      ) : null}
-      {withTagline ? (
-        <span className="mt-1 text-[0.6rem] font-medium uppercase tracking-[0.28em] opacity-80">
-          {siteSettings.tagline}
-        </span>
-      ) : null}
+      <Image
+        src={LOGO_SRC[tone]}
+        alt=""
+        width={LOGO_W}
+        height={LOGO_H}
+        priority={priority}
+        className={cn('h-11 w-auto sm:h-12', imgClassName)}
+      />
     </Link>
   )
 }
