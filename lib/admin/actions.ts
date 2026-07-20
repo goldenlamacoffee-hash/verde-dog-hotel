@@ -308,6 +308,26 @@ export async function deletePricingRule(id: string) {
 
 // ─── Media assets ─────────────────────────────────────────────────────────────
 
+/** Mime-type hint derived from file extension */
+function mimeFromExtension(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+    gif: 'image/gif',  webp: 'image/webp', svg: 'image/svg+xml',
+    mp4: 'video/mp4',  webm: 'video/webm', pdf: 'application/pdf',
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
+
+/** Sanitise filename — strip path traversal, allow only safe chars */
+function sanitiseFilename(raw: string): string {
+  return raw
+    .replace(/[/\\?%*:|"<>]/g, '-') // replace dangerous chars
+    .replace(/\.{2,}/g, '.')         // collapse consecutive dots
+    .replace(/^[.\s]+|[.\s]+$/g, '') // trim leading/trailing dots and spaces
+    .slice(0, 255)
+}
+
 export async function upsertMediaAsset(data: {
   id?: string
   filename: string
@@ -318,9 +338,31 @@ export async function upsertMediaAsset(data: {
   alt?: string
   tags?: string[]
 }) {
+  // Validate public_url when provided
+  if (data.public_url) {
+    try {
+      const u = new URL(data.public_url)
+      if (u.protocol !== 'https:') throw new Error('Only HTTPS URLs are allowed.')
+    } catch {
+      throw new Error('public_url must be a valid HTTPS URL.')
+    }
+  }
+
+  const filename = sanitiseFilename(data.filename)
+  if (!filename) throw new Error('Název souboru je neplatný.')
+
+  const mime_type = data.mime_type?.trim() || mimeFromExtension(filename)
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const payload = { ...data, uploaded_by: user?.id }
+
+  const payload = {
+    ...data,
+    filename,
+    mime_type,
+    uploaded_by: user?.id,
+  }
+
   const { error } = data.id
     ? await supabase.from('media_assets').update({ ...payload, id: undefined }).eq('id', data.id)
     : await supabase.from('media_assets').insert(payload)
