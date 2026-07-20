@@ -7,7 +7,7 @@ import { ReservationCta } from '@/components/home/reservation-cta'
 import { CtaLink } from '@/components/common/cta-button'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { formatPrice, unitLabel } from '@/lib/format'
-import { getPublicPriceItems } from '@/lib/public-data'
+import { getPublicPriceItems, getPublicPageSection } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'Ceník',
@@ -24,7 +24,10 @@ const included = [
 ]
 
 export default async function PricingPage() {
-  const priceItems = await getPublicPriceItems()
+  const [priceItems, hero] = await Promise.all([
+    getPublicPriceItems(),
+    getPublicPageSection('cenik', 'hero'),
+  ])
   const [featured, ...rest] = [...priceItems].sort((a, b) =>
     a.featured === b.featured ? 0 : a.featured ? -1 : 1,
   )
@@ -32,9 +35,9 @@ export default async function PricingPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Ceník"
-        title="Férové ceny bez skrytých poplatků"
-        description="Ceny jsou orientační a vždy je potvrdíme při rezervaci podle délky pobytu a potřeb vašeho psa."
+        eyebrow={(hero?.eyebrow as string) ?? 'Ceník'}
+        title={(hero?.headline as string) ?? 'Férové ceny bez skrytých poplatků'}
+        description={(hero?.description as string) ?? 'Ceny jsou orientační a vždy je potvrdíme při rezervaci podle délky pobytu a potřeb vašeho psa.'}
       />
 
       <section className="bg-background py-16 md:py-24">

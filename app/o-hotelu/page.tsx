@@ -7,6 +7,7 @@ import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { aboutIntro, aboutValues } from '@/content/pages'
 import { pillars } from '@/content/home'
 import { PillarIcon } from '@/components/brand/pillar-icon'
+import { getPublicPageSection } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'O hotelu',
@@ -14,13 +15,15 @@ export const metadata: Metadata = {
     'Psí hotel VERDE vznikl z respektu k psům. Klidné venkovské prostředí nedaleko Brna, individuální péče a bezpečné zázemí.',
 }
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const hero = await getPublicPageSection('o-hotelu', 'hero')
+
   return (
     <>
       <PageHeader
-        eyebrow={aboutIntro.eyebrow}
-        title={aboutIntro.heading}
-        description={aboutIntro.paragraphs[0]}
+        eyebrow={(hero?.eyebrow as string) ?? aboutIntro.eyebrow}
+        title={(hero?.headline as string) ?? aboutIntro.heading}
+        description={(hero?.description as string) ?? aboutIntro.paragraphs[0]}
       />
 
       <section className="bg-background py-16 md:py-24">

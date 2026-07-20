@@ -7,6 +7,7 @@ import { ReservationCta } from '@/components/home/reservation-cta'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { services } from '@/content/services'
 import { formatPrice, unitLabel } from '@/lib/format'
+import { getPublicPageSection } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'Péče a ubytování',
@@ -14,13 +15,15 @@ export const metadata: Metadata = {
     'Jak vypadá péče o vašeho psa ve Verde — komfortní ubytování, denní režim, krmení podle zvyklostí a doplňkové služby.',
 }
 
-export default function CarePage() {
+export default async function CarePage() {
+  const hero = await getPublicPageSection('pece-a-ubytovani', 'hero')
+
   return (
     <>
       <PageHeader
-        eyebrow="Péče a ubytování"
-        title="Péče šitá na míru každému psovi"
-        description="Od komfortního zázemí přes vyvážený denní režim až po doplňkové služby. Vše přizpůsobíme povaze a zvyklostem vašeho psa."
+        eyebrow={(hero?.eyebrow as string) ?? 'Péče a ubytování'}
+        title={(hero?.headline as string) ?? 'Péče šitá na míru každému psovi'}
+        description={(hero?.description as string) ?? 'Od komfortního zázemí přes vyvážený denní režim až po doplňkové služby. Vše přizpůsobíme povaze a zvyklostem vašeho psa.'}
       />
 
       <Accommodation />

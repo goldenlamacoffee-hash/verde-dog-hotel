@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Chybí povinné údaje.' }, { status: 422 })
     }
 
-    const supabase = await createClient()
+    // Service-role client bypasses RLS for trusted server-side inserts
+    const supabase = createServiceRoleClient()
 
     // 1. Upsert customer
     const { data: customer, error: custErr } = await supabase

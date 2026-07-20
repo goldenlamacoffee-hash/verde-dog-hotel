@@ -5,6 +5,7 @@ import { SectionHeading } from '@/components/common/section-heading'
 import { ContactForm } from '@/components/contact/contact-form'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { siteSettings } from '@/content/site'
+import { getPublicPageSection } from '@/lib/public-data'
 
 const { contact, slogan } = siteSettings
 
@@ -14,13 +15,15 @@ export const metadata: Metadata = {
     'Kontaktujte psí hotel VERDE — telefon, e-mail a lokalita Brno-venkov. Napište nám a rádi vám poradíme s pobytem vašeho psa.',
 }
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const hero = await getPublicPageSection('kontakt', 'hero')
+
   return (
     <>
       <PageHeader
-        eyebrow="Kontakt"
-        title="Ozvěte se nám"
-        description="Rádi zodpovíme vaše dotazy a domluvíme prohlídku i termín pobytu."
+        eyebrow={(hero?.eyebrow as string) ?? 'Kontakt'}
+        title={(hero?.headline as string) ?? 'Ozvěte se nám'}
+        description={(hero?.description as string) ?? 'Rádi zodpovíme vaše dotazy a domluvíme prohlídku i termín pobytu.'}
       />
 
       <section className="bg-background py-16 md:py-24">

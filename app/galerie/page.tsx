@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PageHeader } from '@/components/common/page-header'
 import { GalleryGrid } from '@/components/gallery/gallery-grid'
 import { ReservationCta } from '@/components/home/reservation-cta'
+import { getPublicPageSection } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'Galerie',
@@ -9,13 +10,15 @@ export const metadata: Metadata = {
     'Prohlédněte si prostředí psího hotelu VERDE — zázemí, přírodní okolí a každodenní život psů u nás.',
 }
 
-export default function GalleryPage() {
+export default async function GalleryPage() {
+  const hero = await getPublicPageSection('galerie', 'hero')
+
   return (
     <>
       <PageHeader
-        eyebrow="Galerie"
-        title="Život ve Verde v obrazech"
-        description="Zázemí, příroda a spokojení psi. Klikněte na fotku pro její zvětšení."
+        eyebrow={(hero?.eyebrow as string) ?? 'Galerie'}
+        title={(hero?.headline as string) ?? 'Život ve Verde v obrazech'}
+        description={(hero?.description as string) ?? 'Zázemí, příroda a spokojení psi. Klikněte na fotku pro její zvětšení.'}
       />
 
       <section className="bg-background py-16 md:py-24">

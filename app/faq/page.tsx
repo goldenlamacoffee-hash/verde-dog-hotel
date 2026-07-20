@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { PageHeader } from '@/components/common/page-header'
 import { FaqAccordion } from '@/components/faq/faq-accordion'
 import { ReservationCta } from '@/components/home/reservation-cta'
-import { getPublicFaq } from '@/lib/public-data'
+import { getPublicFaq, getPublicPageSection } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'Časté dotazy',
@@ -12,14 +12,17 @@ export const metadata: Metadata = {
 }
 
 export default async function FaqPage() {
-  const items = await getPublicFaq()
+  const [items, hero] = await Promise.all([
+    getPublicFaq(),
+    getPublicPageSection('faq', 'hero'),
+  ])
 
   return (
     <>
       <PageHeader
-        eyebrow="Časté dotazy"
-        title="Vše, co potřebujete vědět"
-        description="Nenašli jste odpověď na svůj dotaz? Rádi vám poradíme osobně."
+        eyebrow={(hero?.eyebrow as string) ?? 'Časté dotazy'}
+        title={(hero?.headline as string) ?? 'Vše, co potřebujete vědět'}
+        description={(hero?.description as string) ?? 'Nenašli jste odpověď na svůj dotaz? Rádi vám poradíme osobně.'}
       />
 
       <section className="bg-background py-16 md:py-24">
