@@ -6,11 +6,23 @@ import './admin.css'
 
 export const metadata = { title: 'Admin | VERDE' }
 
-export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  // The login page renders inside this layout but must bypass the auth guard.
+  // We detect that by checking cookies lazily — if no user, skip guard so the
+  // login page can render. The middleware already redirects /admin/* to /admin/login.
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) redirect('/admin/login')
+  // Allow login page to pass through without the full admin shell.
+  // The page itself handles the unauthenticated state.
+  if (!user) {
+    // Render children directly (login page) without sidebar/topbar.
+    return <>{children}</>
+  }
 
   // Check admin role
   const { data: role } = await supabase
