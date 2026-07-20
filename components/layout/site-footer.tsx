@@ -20,7 +20,7 @@ export function SiteFooter() {
 
         <div className="grid gap-10 py-12 md:grid-cols-2 lg:grid-cols-4">
           <div className="flex flex-col gap-4">
-            <Logo tone="light" />
+            <Logo tone="light" imgClassName="h-14 w-auto" />
             <p className="text-sm leading-relaxed text-verde-white/70">
               {siteSettings.tagline}. Klidné venkovské zázemí pro vašeho psa
               v okolí {contact.region}.
