@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AdminSidebar } from '@/components/admin/shell/sidebar'
 import { AdminTopbar } from '@/components/admin/shell/topbar'
-import '../admin/admin.css'
+import './admin.css'
 
 export const metadata = { title: 'Admin | VERDE' }
 

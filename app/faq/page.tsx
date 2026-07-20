@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { PageHeader } from '@/components/common/page-header'
 import { FaqAccordion } from '@/components/faq/faq-accordion'
 import { ReservationCta } from '@/components/home/reservation-cta'
-import { faqItems } from '@/content/faq'
+import { getPublicFaq } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'Časté dotazy',
@@ -11,7 +11,9 @@ export const metadata: Metadata = {
     'Odpovědi na časté dotazy k pobytu ve psím hotelu VERDE — očkování, krmení, léky, příjezd, storno podmínky a další.',
 }
 
-export default function FaqPage() {
+export default async function FaqPage() {
+  const items = await getPublicFaq()
+
   return (
     <>
       <PageHeader
@@ -22,7 +24,7 @@ export default function FaqPage() {
 
       <section className="bg-background py-16 md:py-24">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-          <FaqAccordion items={faqItems} />
+          <FaqAccordion items={items} />
 
           <p className="mt-10 text-center leading-relaxed text-verde-moss">
             Máte další otázky?{' '}

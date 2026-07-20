@@ -1,8 +1,12 @@
 import { Quote } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
-import { testimonials } from '@/content/home'
+import type { Testimonial } from '@/lib/types'
 
-export function Testimonials() {
+interface Props {
+  items: Testimonial[]
+}
+
+export function Testimonials({ items }: Props) {
   return (
     <section className="bg-secondary paper-texture">
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 md:py-28 lg:px-8">
@@ -15,7 +19,7 @@ export function Testimonials() {
         />
 
         <div className="mt-14 grid gap-6 md:grid-cols-3">
-          {testimonials.map((t, i) => (
+          {items.map((t, i) => (
             <figure
               key={i}
               className="flex flex-col rounded-2xl bg-card p-7 shadow-sm ring-1 ring-verde-deep/5"

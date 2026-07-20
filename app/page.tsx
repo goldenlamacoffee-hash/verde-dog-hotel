@@ -7,8 +7,11 @@ import { Trust } from '@/components/home/trust'
 import { GalleryPreview } from '@/components/home/gallery-preview'
 import { Testimonials } from '@/components/home/testimonials'
 import { ReservationCta } from '@/components/home/reservation-cta'
+import { getPublicTestimonials } from '@/lib/public-data'
 
-export default function HomePage() {
+export default async function HomePage() {
+  const testimonials = await getPublicTestimonials()
+
   return (
     <>
       <Hero />
@@ -18,7 +21,7 @@ export default function HomePage() {
       <Routine />
       <Trust />
       <GalleryPreview />
-      <Testimonials />
+      <Testimonials items={testimonials} />
       <ReservationCta />
     </>
   )
