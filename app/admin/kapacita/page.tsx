@@ -1,6 +1,7 @@
-import { getReservationsForRange, getSiteSetting } from '@/lib/admin/queries'
+import { getReservationsForRange, getSiteSetting, getCapacityOverrides } from '@/lib/admin/queries'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { StatusBadge } from '@/components/admin/ui/status-badge'
+import { CapacityOverridesPanel } from '@/components/admin/capacity/capacity-overrides-panel'
 
 export const metadata = { title: 'Kapacita | VERDE Admin' }
 
@@ -24,9 +25,10 @@ export default async function CapacityPage() {
   const fromStr = fmtDate(today)
   const toStr = fmtDate(addDays(today, 27))
 
-  const [{ data: reservations }, capacitySetting] = await Promise.all([
+  const [{ data: reservations }, capacitySetting, { data: overrides }] = await Promise.all([
     getReservationsForRange(fromStr, toStr),
     getSiteSetting('capacity'),
+    getCapacityOverrides(),
   ])
 
   const maxDogs: number = capacitySetting?.maxDogs ?? 12
@@ -100,6 +102,17 @@ export default async function CapacityPage() {
           <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded bg-[#d97706]" /> Téměř plno</span>
           <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded bg-[#dc2626]" /> Plno</span>
         </div>
+      </div>
+
+      {/* Capacity overrides */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
+      >
+        <h2 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--admin-text-muted)' }}>
+          Blokace a omezení kapacity
+        </h2>
+        <CapacityOverridesPanel overrides={overrides ?? []} />
       </div>
 
       {/* Today's reservations */}

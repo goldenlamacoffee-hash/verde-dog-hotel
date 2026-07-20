@@ -1,13 +1,17 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getReservationById } from '@/lib/admin/queries'
+import { getReservationById, getPaymentsForReservation } from '@/lib/admin/queries'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { StatusBadge } from '@/components/admin/ui/status-badge'
 import { ReservationActions } from '@/components/admin/reservations/reservation-actions'
+import { PaymentsPanel } from '@/components/admin/reservations/payments-panel'
 
 export default async function ReservationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { data: res, error } = await getReservationById(id)
+  const [{ data: res, error }, { data: payments }] = await Promise.all([
+    getReservationById(id),
+    getPaymentsForReservation(id),
+  ])
   if (error || !res) notFound()
 
   function fmt(d: string) {
@@ -105,9 +109,17 @@ export default async function ReservationDetailPage({ params }: { params: Promis
             <ReservationActions reservationId={id} currentStatus={res.status} />
           </Section>
 
-          <Section title="Platba">
-            <InfoRow label="Celková cena" value={res.total_price ? `${Number(res.total_price).toLocaleString('cs-CZ')} Kč` : '—'} />
-            <InfoRow label="Záloha" value={res.deposit_paid ? `Uhrazena${res.deposit_amount ? ` (${Number(res.deposit_amount).toLocaleString('cs-CZ')} Kč)` : ''}` : 'Čeká'} />
+          <Section title="Platby">
+            <PaymentsPanel
+              reservationId={id}
+              payments={payments ?? []}
+              totalPrice={res.total_price}
+            />
+          </Section>
+
+          <Section title="Detaily rezervace">
+            <InfoRow label="Záloha (sazba)" value={res.deposit_amount ? `${Number(res.deposit_amount).toLocaleString('cs-CZ')} Kč` : '—'} />
+            <InfoRow label="Záloha uhrazena" value={res.deposit_paid ? 'Ano' : 'Ne'} />
             <InfoRow label="Plná úhrada" value={res.paid_in_full ? 'Ano' : 'Ne'} />
             <InfoRow label="Zdroj" value={res.source ?? '—'} />
           </Section>

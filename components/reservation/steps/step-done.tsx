@@ -9,14 +9,11 @@ import type { Estimate, ReservationDraft } from '@/lib/reservation'
 interface Props {
   draft: ReservationDraft
   estimate: Estimate
+  refNumber: string
   onRestart: () => void
 }
 
-export function StepDone({ draft, estimate, onRestart }: Props) {
-  const reference = `VER-${new Date().getFullYear()}-${String(
-    Math.floor(1000 + Math.random() * 9000),
-  )}`
-
+export function StepDone({ draft, estimate, refNumber, onRestart }: Props) {
   return (
     <div className="mx-auto max-w-xl text-center">
       <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-secondary">
@@ -34,7 +31,7 @@ export function StepDone({ draft, estimate, onRestart }: Props) {
       <div className="mt-8 rounded-2xl border border-border bg-secondary/50 p-6 text-left">
         <div className="flex items-center justify-between border-b border-border pb-4">
           <span className="label-caps text-verde-wood">Číslo žádosti</span>
-          <span className="font-mono text-sm font-semibold text-verde-deep">{reference}</span>
+          <span className="font-mono text-sm font-semibold text-verde-deep">{refNumber}</span>
         </div>
         <dl className="mt-4 space-y-2.5 text-sm">
           <div className="flex justify-between gap-3">
@@ -71,9 +68,7 @@ export function StepDone({ draft, estimate, onRestart }: Props) {
         </button>
       </div>
 
-      <p className="mt-8 text-xs text-verde-stone">
-        Toto je ukázková rezervace — žádná data se neukládají ani neodesílají.
-      </p>
+
     </div>
   )
 }

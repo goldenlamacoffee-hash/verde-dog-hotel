@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Check } from 'lucide-react'
+import { Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   RESERVATION_STEPS,
@@ -24,6 +24,9 @@ export function ReservationFlow() {
   const [stepIndex, setStepIndex] = useState(0)
   const [draft, setDraft] = useState<ReservationDraft>(createEmptyDraft)
   const [errors, setErrors] = useState<Errors>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [refNumber, setRefNumber] = useState('')
 
   const estimate = useMemo(() => calculateEstimate(draft), [draft])
   const activeStep = RESERVATION_STEPS[stepIndex]
@@ -82,15 +85,40 @@ export function ReservationFlow() {
     return Object.keys(e).length === 0
   }
 
-  function next() {
+  async function next() {
     if (!validateStep()) {
-      // focus first error region by scrolling to top of the form card
       document
         .getElementById('reservation-step')
         ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return
     }
     setErrors({})
+
+    // On the summary step, persist to DB before advancing
+    if (activeStep.id === 'summary') {
+      setSubmitting(true)
+      setSubmitError(null)
+      try {
+        const res = await fetch('/api/rezervace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ draft, estimate }),
+        })
+        const json = await res.json()
+        if (!res.ok) {
+          setSubmitError(json.error ?? 'Chyba při odesílání. Zkuste to prosím znovu.')
+          setSubmitting(false)
+          return
+        }
+        setRefNumber(json.refNumber)
+      } catch {
+        setSubmitError('Nepodařilo se odeslat žádost. Zkuste to prosím znovu.')
+        setSubmitting(false)
+        return
+      }
+      setSubmitting(false)
+    }
+
     setStepIndex((i) => Math.min(i + 1, RESERVATION_STEPS.length - 1))
     document
       .getElementById('reservation-top')
@@ -106,6 +134,8 @@ export function ReservationFlow() {
     setDraft(createEmptyDraft())
     setErrors({})
     setStepIndex(0)
+    setRefNumber('')
+    setSubmitError(null)
   }
 
   const progressSteps = RESERVATION_STEPS.slice(0, 5)
@@ -216,6 +246,8 @@ export function ReservationFlow() {
               draft={draft}
               estimate={estimate}
               errors={errors}
+              submitError={submitError}
+              submitting={submitting}
               onChange={update}
               onNext={next}
               onBack={back}
@@ -225,7 +257,12 @@ export function ReservationFlow() {
             />
           )}
           {activeStep.id === 'done' && (
-            <StepDone draft={draft} estimate={estimate} onRestart={restart} />
+            <StepDone
+              draft={draft}
+              estimate={estimate}
+              refNumber={refNumber}
+              onRestart={restart}
+            />
           )}
         </div>
 

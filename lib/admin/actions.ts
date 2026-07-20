@@ -167,3 +167,141 @@ export async function deleteGalleryItem(id: string) {
   if (error) throw new Error(error.message)
   revalidatePath('/admin/galerie')
 }
+
+// ─── Payments ─────────────────────────────────────────────────────────────────
+
+export async function addPayment(data: {
+  reservation_id: string
+  amount: number
+  payment_type: 'deposit' | 'final' | 'refund' | 'extra'
+  method?: 'cash' | 'card' | 'bank_transfer' | 'online'
+  paid_at?: string
+  note?: string
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { error } = await supabase.from('payments').insert({
+    ...data,
+    paid_at: data.paid_at ?? new Date().toISOString(),
+    recorded_by: user?.id ?? null,
+  })
+  if (error) throw new Error(error.message)
+
+  // Update deposit_paid / paid_in_full flags on the reservation
+  const { data: allPayments } = await supabase
+    .from('payments')
+    .select('payment_type, amount')
+    .eq('reservation_id', data.reservation_id)
+    .not('payment_type', 'eq', 'refund')
+
+  const { data: res } = await supabase
+    .from('reservations')
+    .select('total_price, deposit_amount')
+    .eq('id', data.reservation_id)
+    .single()
+
+  if (allPayments && res) {
+    const totalPaid = allPayments.reduce((s: number, p: any) => s + Number(p.amount), 0)
+    const refunds = 0 // already excluded above
+    const depositPaid = allPayments.some((p: any) => p.payment_type === 'deposit')
+    const paidInFull = totalPaid - refunds >= Number(res.total_price)
+
+    await supabase
+      .from('reservations')
+      .update({ deposit_paid: depositPaid, paid_in_full: paidInFull })
+      .eq('id', data.reservation_id)
+  }
+
+  revalidatePath(`/admin/rezervace/${data.reservation_id}`)
+}
+
+export async function deletePayment(id: string, reservationId: string) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('payments').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath(`/admin/rezervace/${reservationId}`)
+}
+
+// ─── Capacity overrides ───────────────────────────────────────────────────────
+
+export async function upsertCapacityOverride(data: {
+  id?: string
+  date_from: string
+  date_to: string
+  max_dogs?: number | null
+  reason?: string
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { error } = data.id
+    ? await supabase.from('capacity_overrides').update({ ...data, id: undefined }).eq('id', data.id)
+    : await supabase.from('capacity_overrides').insert({ ...data, created_by: user?.id })
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/kapacita')
+}
+
+export async function deleteCapacityOverride(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('capacity_overrides').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/kapacita')
+}
+
+// ─── Page sections ────────────────────────────────────────────────────────────
+
+export async function upsertPageSection(data: {
+  page: string
+  section_key: string
+  content: Record<string, unknown>
+  active?: boolean
+  sort_order?: number
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { error } = await supabase
+    .from('page_sections')
+    .upsert(
+      { ...data, updated_by: user?.id, updated_at: new Date().toISOString() },
+      { onConflict: 'page,section_key' }
+    )
+
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/obsah')
+  revalidatePath('/')
+}
+
+// ─── Pricing rules ────────────────────────────────────────────────────────────
+
+export async function upsertPricingRule(data: {
+  id?: string
+  name: string
+  rule_type: 'seasonal' | 'length_of_stay' | 'multi_dog' | 'promo'
+  date_from?: string | null
+  date_to?: string | null
+  min_nights?: number | null
+  max_nights?: number | null
+  dog_count_min?: number | null
+  modifier_type: 'percent' | 'fixed'
+  modifier_value: number
+  active: boolean
+  sort_order: number
+}) {
+  const supabase = await createClient()
+  const { error } = data.id
+    ? await supabase.from('pricing_rules').update({ ...data, id: undefined }).eq('id', data.id)
+    : await supabase.from('pricing_rules').insert(data)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/sluzby')
+  revalidatePath('/cenik')
+}
+
+export async function deletePricingRule(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('pricing_rules').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/sluzby')
+}
