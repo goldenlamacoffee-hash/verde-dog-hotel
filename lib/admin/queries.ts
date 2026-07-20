@@ -251,21 +251,13 @@ export async function getMediaAssets(opts?: {
 }
 
 // ─── Audit log ────────────────────────────────────────────────────────────────
-
-export async function getAuditLog(opts?: {
+// The audit_log table does not yet exist. This stub returns an empty result
+// so the /admin/audit page renders without errors.
+export async function getAuditLog(_opts?: {
   tableName?: string
   recordId?: string
   limit?: number
   offset?: number
 }) {
-  const supabase = await createClient()
-  let q = supabase
-    .from('audit_log')
-    .select('*', { count: 'exact' })
-    .order('changed_at', { ascending: false })
-  if (opts?.tableName) q = q.eq('table_name', opts.tableName)
-  if (opts?.recordId) q = q.eq('record_id', opts.recordId)
-  if (opts?.limit) q = q.limit(opts.limit)
-  if (opts?.offset) q = q.range(opts.offset, (opts.offset + (opts.limit ?? 50)) - 1)
-  return q
+  return { data: [], count: 0, error: null }
 }

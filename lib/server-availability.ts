@@ -65,44 +65,49 @@ export async function checkAvailability(
     return { available: false, spotsLeft: 0, reason: 'Neplatné datum pobytu.' }
   }
 
-  // 2. capacity_overrides — check for fully blocked dates
+  // 2. capacity_overrides — check for fully blocked date ranges
+  // Columns: date_from, date_to (inclusive), max_dogs (nullable), reason
   try {
+    const checkInDate   = checkIn
+    const checkOutDate  = checkOut  // exclusive — last night is day before checkout
+
     const { data: overrides } = await supabase
       .from('capacity_overrides')
-      .select('date, type, max_dogs_override')
-      .in('date', nights)
+      .select('date_from, date_to, max_dogs, reason')
+      // overlapping: date_from < checkOut AND date_to >= checkIn
+      .lt('date_from', checkOutDate)
+      .gte('date_to', checkInDate)
 
     if (overrides?.length) {
       for (const override of overrides) {
-        if (override.type === 'blocked') {
+        if (override.max_dogs === 0) {
           return {
             available: false,
             spotsLeft: 0,
-            reason: `Datum ${override.date} je uzavřeno (blokace).`,
+            reason: override.reason
+              ? `Termín je uzavřen: ${override.reason}`
+              : `Termín ${override.date_from}–${override.date_to} je uzavřen (blokace).`,
           }
         }
-        // If there's a per-day cap override, use the minimum across all days
-        if (
-          override.type === 'limited' &&
-          override.max_dogs_override !== null &&
-          override.max_dogs_override < globalMax
-        ) {
-          globalMax = override.max_dogs_override
+        // Respect per-range cap if lower than global
+        if (override.max_dogs !== null && override.max_dogs < globalMax) {
+          globalMax = override.max_dogs
         }
       }
     }
-  } catch {
-    // capacity_overrides may not have a 'type' column yet — ignore errors
+  } catch (err) {
+    console.error('[verde] capacity_overrides query failed:', err)
+    // Non-fatal — proceed without override check
   }
 
   // 3. Count dogs in overlapping active reservations
-  // Overlapping means: check_in < checkOut AND check_out > checkIn
+  // Overlapping: arrival_date < checkOut AND departure_date > checkIn
   let query = supabase
     .from('reservations')
     .select('id')
     .in('status', ACTIVE_STATUSES as unknown as string[])
-    .lt('check_in', checkOut)
-    .gt('check_out', checkIn)
+    .lt('arrival_date', checkOut)
+    .gt('departure_date', checkIn)
 
   if (excludeReservationId) {
     query = query.neq('id', excludeReservationId)

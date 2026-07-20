@@ -20,7 +20,7 @@ export async function updateReservationNotes(id: string, internalNotes: string) 
   const supabase = await createClient()
   const { error } = await supabase
     .from('reservations')
-    .update({ notes: internalNotes })
+    .update({ internal_notes: internalNotes })
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath(`/admin/rezervace/${id}`)
