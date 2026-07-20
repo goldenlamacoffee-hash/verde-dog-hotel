@@ -3,7 +3,14 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const NAV = [
+interface NavItem {
+  href: string
+  label: string
+  icon: (p: React.SVGProps<SVGSVGElement>) => React.ReactElement
+  exact?: boolean
+}
+
+const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Přehled',
     items: [

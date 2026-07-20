@@ -8,6 +8,55 @@ import { faqItems as staticFaq } from '@/content/faq'
 import { priceItems as staticPrices } from '@/content/services'
 import { testimonials as staticTestimonials } from '@/content/home'
 
+// ─── Page Sections (CMS) ──────────────────────────────────────────────────────
+
+/**
+ * Fetch a single page section content object from the DB.
+ * Returns null if not found — callers should fall back to static defaults.
+ */
+export async function getPublicPageSection<T extends Record<string, unknown>>(
+  page: string,
+  sectionKey: string
+): Promise<T | null> {
+  try {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('page_sections')
+      .select('content')
+      .eq('page', page)
+      .eq('section_key', sectionKey)
+      .eq('active', true)
+      .single()
+    if (data?.content) return data.content as T
+  } catch {
+    // fall through to null
+  }
+  return null
+}
+
+/**
+ * Fetch all active sections for a page, keyed by section_key.
+ */
+export async function getPublicPageSections(page: string): Promise<Record<string, Record<string, unknown>>> {
+  try {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('page_sections')
+      .select('section_key, content')
+      .eq('page', page)
+      .eq('active', true)
+      .order('sort_order')
+    if (data && data.length > 0) {
+      return Object.fromEntries(data.map((s: any) => [s.section_key, s.content]))
+    }
+  } catch {
+    // fall through
+  }
+  return {}
+}
+
 // ─── FAQ ──────────────────────────────────────────────────────────────────────
 
 export async function getPublicFaq(): Promise<FaqItem[]> {

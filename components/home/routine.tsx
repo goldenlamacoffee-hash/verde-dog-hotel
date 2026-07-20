@@ -1,16 +1,22 @@
 import { SectionHeading } from '@/components/common/section-heading'
 import { routine } from '@/content/home'
 
-export function Routine() {
+interface Props { cms?: Record<string, unknown> }
+
+export function Routine({ cms }: Props) {
+  const eyebrow    = (cms?.eyebrow    as string) || 'Den ve Verde'
+  const title      = (cms?.title      as string) || 'Vyvážený režim od rána do večera'
+  const description= (cms?.description as string) || 'Pravidelnost dává psům jistotu. Náš den kombinuje pohyb, péči a dostatek klidu na odpočinek.'
+
   return (
     <section className="bg-background">
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 md:py-28 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)] lg:gap-16">
           <SectionHeading
-            eyebrow="Den ve Verde"
-            title="Vyvážený režim od rána do večera"
+            eyebrow={eyebrow}
+            title={title}
             withSprig
-            description="Pravidelnost dává psům jistotu. Náš den kombinuje pohyb, péči a dostatek klidu na odpočinek."
+            description={description}
           />
 
           <ol className="relative border-l border-verde-stone/60">

@@ -2,7 +2,15 @@ import Image from 'next/image'
 import { SectionHeading } from '@/components/common/section-heading'
 import { CtaLink } from '@/components/common/cta-button'
 
-export function Intro() {
+interface Props { cms?: Record<string, unknown> }
+
+export function Intro({ cms }: Props) {
+  const eyebrow    = (cms?.eyebrow    as string) || 'Vítejte ve Verde'
+  const title      = (cms?.title      as string) || 'Pobyt, který respektuje povahu vašeho psa'
+  const lead       = (cms?.lead       as string) || 'Věříme, že spokojený pes potřebuje klid, prostor a lidský přístup. Proto ve Verde spojujeme přírodní prostředí s péčí přizpůsobenou každému psovi zvlášť — od krmení a pohybu až po odpočinek.'
+  const body       = (cms?.body       as string) || 'Nacházíme se v klidné lokalitě Brno – venkov, obklopeni zelení a dostatkem místa k procházkám. Ať už jedete na dovolenou nebo služební cestu, váš pes u nás najde bezpečné zázemí a lidi, kterým na něm záleží.'
+  const ctaLabel   = (cms?.cta_label  as string) || 'Více o hotelu'
+
   return (
     <section className="bg-background">
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 md:py-28 lg:grid-cols-2 lg:gap-16 lg:px-8">
@@ -19,20 +27,17 @@ export function Intro() {
 
         <div>
           <SectionHeading
-            eyebrow="Vítejte ve Verde"
-            title="Pobyt, který respektuje povahu vašeho psa"
+            eyebrow={eyebrow}
+            title={title}
             withSprig
-            description="Věříme, že spokojený pes potřebuje klid, prostor a lidský přístup. Proto ve Verde spojujeme přírodní prostředí s péčí přizpůsobenou každému psovi zvlášť — od krmení a pohybu až po odpočinek."
+            description={lead}
           />
           <p className="mt-6 max-w-xl text-pretty leading-relaxed text-verde-moss">
-            Nacházíme se v klidné lokalitě Brno – venkov, obklopeni zelení
-            a dostatkem místa k procházkám. Ať už jedete na dovolenou nebo
-            služební cestu, váš pes u nás najde bezpečné zázemí a lidi,
-            kterým na něm záleží.
+            {body}
           </p>
           <div className="mt-8">
             <CtaLink href="/o-hotelu" variant="secondary" size="lg">
-              Více o hotelu
+              {ctaLabel}
             </CtaLink>
           </div>
         </div>

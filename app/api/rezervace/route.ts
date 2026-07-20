@@ -1,5 +1,3 @@
-'use server'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
@@ -56,14 +54,13 @@ export async function POST(req: NextRequest) {
         ref_number: refNumber,
         arrival_date: draft.arrival,
         departure_date: draft.departure,
-        dog_count: draft.dogCount,
         total_price: estimate.total,
         deposit_amount: estimate.deposit,
         deposit_paid: false,
-        status: 'pending',
+        paid_in_full: false,
+        status: 'inquiry',
         source: 'web',
-        internal_notes: draft.owner.message || null,
-        consents: draft.consents,
+        notes: draft.owner.message || null,
       })
       .select('id')
       .single()
@@ -82,14 +79,16 @@ export async function POST(req: NextRequest) {
         .insert({
           customer_id: customer.id,
           name: dog.name.trim(),
-          breed_name: dog.breed || null,
+          breed_other: dog.breed || null,
           sex: dog.sex || null,
           neutered: dog.neutered ?? false,
           weight_kg: dog.weightKg ? parseFloat(dog.weightKg) : null,
-          feeding_regime: dog.feedingRegime || null,
-          medications: dog.medications || null,
-          compatibility_notes: dog.compatibility || null,
-          notes: dog.note || null,
+          health_notes: [
+            dog.feedingRegime ? `Krmení: ${dog.feedingRegime}` : '',
+            dog.medications ? `Léky: ${dog.medications}` : '',
+            dog.note || '',
+          ].filter(Boolean).join('\n') || null,
+          behavior_notes: dog.compatibility || null,
         })
         .select('id')
         .single()
@@ -115,7 +114,7 @@ export async function POST(req: NextRequest) {
       if (!svc) continue
 
       const nights = estimate.nights
-      const qty = ['night', 'day'].includes(svc.unit) ? Math.max(nights, 1) : 1
+      const qty = ['night', 'day', 'per-night', 'per-day'].includes(svc.unit) ? Math.max(nights, 1) : 1
 
       await supabase.from('reservation_services').insert({
         reservation_id: reservation.id,

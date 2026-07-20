@@ -4,16 +4,22 @@ import { ArrowUpRight } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
 import { accommodationCards } from '@/content/home'
 
-export function Accommodation() {
+interface Props { cms?: Record<string, unknown> }
+
+export function Accommodation({ cms }: Props) {
+  const eyebrow    = (cms?.eyebrow    as string) || 'Zázemí a péče'
+  const title      = (cms?.title      as string) || 'Prostředí, kde se pes cítí bezpečně'
+  const description= (cms?.description as string) || 'Spojujeme pohodlné vnitřní zázemí s bezpečným venkovním prostorem v přírodě.'
+
   return (
     <section className="bg-secondary paper-texture">
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 md:py-28 lg:px-8">
         <SectionHeading
           align="center"
-          eyebrow="Zázemí a péče"
-          title="Prostředí, kde se pes cítí bezpečně"
+          eyebrow={eyebrow}
+          title={title}
           withSprig
-          description="Spojujeme pohodlné vnitřní zázemí s bezpečným venkovním prostorem v přírodě."
+          description={description}
           className="mx-auto max-w-2xl"
         />
 
