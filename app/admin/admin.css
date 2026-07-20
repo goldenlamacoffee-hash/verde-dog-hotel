@@ -1,0 +1,25 @@
+/* Admin panel — neutral gray palette layered on top of the public site tokens */
+
+.admin-shell {
+  --admin-bg: #f4f5f6;
+  --admin-sidebar: #1a2e1f;
+  --admin-sidebar-hover: #223827;
+  --admin-sidebar-active: #2a4732;
+  --admin-sidebar-text: #c8d8cb;
+  --admin-sidebar-text-muted: #7a9c82;
+  --admin-sidebar-border: rgba(255,255,255,0.07);
+  --admin-card: #ffffff;
+  --admin-card-border: #e4e7ea;
+  --admin-text: #1a2422;
+  --admin-text-muted: #6b7b76;
+  --admin-accent: #234d2e;
+  --admin-accent-light: #e8f0e9;
+  --admin-danger: #c0392b;
+  --admin-warning: #d97706;
+  --admin-success: #166534;
+  --admin-info: #1d4ed8;
+}
+
+.admin-shell * {
+  box-sizing: border-box;
+}
