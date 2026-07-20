@@ -5,11 +5,15 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { navigation, siteSettings } from '@/content/site'
+import { navigation as staticNavigation, siteSettings } from '@/content/site'
 import { Logo } from '@/components/brand/logo'
 import { CtaLink } from '@/components/common/cta-button'
 
-export function MobileNav({ solid }: { solid: boolean }) {
+interface NavItem { label: string; href: string }
+interface Props { solid: boolean; navItems?: NavItem[] }
+
+export function MobileNav({ solid, navItems }: Props) {
+  const navigation = navItems ?? staticNavigation
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const panelRef = useRef<HTMLDivElement>(null)

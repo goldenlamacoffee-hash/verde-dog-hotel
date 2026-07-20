@@ -4,12 +4,22 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { navigation } from '@/content/site'
+import { navigation as staticNavigation } from '@/content/site'
 import { Logo } from '@/components/brand/logo'
 import { CtaLink } from '@/components/common/cta-button'
 import { MobileNav } from './mobile-nav'
 
-export function SiteHeader() {
+interface NavItem { label: string; href: string }
+
+interface Props {
+  /** CMS-provided nav items; falls back to static navigation when undefined */
+  navItems?: NavItem[]
+  /** CMS-provided CTA label */
+  ctaLabel?: string
+}
+
+export function SiteHeader({ navItems, ctaLabel }: Props) {
+  const navigation = navItems ?? staticNavigation
   const pathname = usePathname()
   const [scrolled, setScrolled] = useState(false)
 
@@ -77,9 +87,9 @@ export function SiteHeader() {
             variant={solid ? 'primary' : 'light'}
             className="hidden sm:inline-flex"
           >
-            Rezervovat pobyt
+            {ctaLabel ?? 'Rezervovat pobyt'}
           </CtaLink>
-          <MobileNav solid={solid} />
+          <MobileNav solid={solid} navItems={navigation} />
         </div>
       </div>
     </header>

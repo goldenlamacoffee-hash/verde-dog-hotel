@@ -3,9 +3,25 @@ import { Mail, MapPin, Phone } from 'lucide-react'
 import { navigation, siteSettings } from '@/content/site'
 import { Logo } from '@/components/brand/logo'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
+import { getPublicSiteSetting } from '@/lib/public-data'
 
-export function SiteFooter() {
+export async function SiteFooter() {
+  // Read live contact info from DB; fall back to static content file values
+  const dbContact = await getPublicSiteSetting<{
+    email?: string
+    phone?: string
+    address?: string
+    instagram?: string
+    facebook?: string
+  }>('contact')
+
   const { contact, legalLinks, slogan } = siteSettings
+  const email     = dbContact?.email     ?? contact.email
+  const phone     = dbContact?.phone     ?? contact.phone
+  const instagram = dbContact?.instagram ?? contact.instagram
+  const facebook  = dbContact?.facebook  ?? contact.facebook
+  const region    = dbContact?.address   ?? contact.region
+
   const year = new Date().getFullYear()
 
   return (
@@ -23,7 +39,7 @@ export function SiteFooter() {
             <Logo tone="light" imgClassName="h-14 w-auto" />
             <p className="text-sm leading-relaxed text-verde-white/70">
               {siteSettings.tagline}. Klidné venkovské zázemí pro vašeho psa
-              v okolí {contact.region}.
+              v okolí {region}.
             </p>
           </div>
 
@@ -48,31 +64,31 @@ export function SiteFooter() {
             <ul className="flex flex-col gap-3 text-sm">
               <li>
                 <a
-                  href={contact.phoneHref}
+                  href={`tel:${phone.replace(/\s/g, '')}`}
                   className="flex items-center gap-2.5 text-verde-white/75 transition-colors hover:text-verde-white"
                 >
                   <Phone className="size-4 shrink-0" aria-hidden="true" />
-                  {contact.phone}
+                  {phone}
                 </a>
               </li>
               <li>
                 <a
-                  href={`mailto:${contact.email}`}
+                  href={`mailto:${email}`}
                   className="flex items-center gap-2.5 text-verde-white/75 transition-colors hover:text-verde-white"
                 >
                   <Mail className="size-4 shrink-0" aria-hidden="true" />
-                  {contact.email}
+                  {email}
                 </a>
               </li>
               <li className="flex items-center gap-2.5 text-verde-white/75">
                 <MapPin className="size-4 shrink-0" aria-hidden="true" />
-                {contact.region}
+                {region}
               </li>
             </ul>
             <div className="mt-2 flex items-center gap-3">
-              {contact.instagram ? (
+              {instagram ? (
                 <a
-                  href={contact.instagram}
+                  href={instagram}
                   aria-label="Instagram"
                   className="inline-flex size-9 items-center justify-center rounded-full border border-verde-white/20 text-verde-white/75 transition-colors hover:bg-verde-white/10 hover:text-verde-white"
                 >
@@ -83,9 +99,9 @@ export function SiteFooter() {
                   </svg>
                 </a>
               ) : null}
-              {contact.facebook ? (
+              {facebook ? (
                 <a
-                  href={contact.facebook}
+                  href={facebook}
                   aria-label="Facebook"
                   className="inline-flex size-9 items-center justify-center rounded-full border border-verde-white/20 text-verde-white/75 transition-colors hover:bg-verde-white/10 hover:text-verde-white"
                 >

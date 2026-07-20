@@ -57,6 +57,30 @@ export async function getPublicPageSections(page: string): Promise<Record<string
   return {}
 }
 
+// ─── Site Settings ────────────────────────────────────────────────────────────
+
+/**
+ * Fetch a single site_settings row by key.
+ * Returns null when the table is unreachable or the key doesn't exist.
+ */
+export async function getPublicSiteSetting<T extends Record<string, unknown>>(
+  key: string,
+): Promise<T | null> {
+  try {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('site_settings')
+      .select('value')
+      .eq('key', key)
+      .single()
+    if (data?.value) return data.value as T
+  } catch {
+    // fall through
+  }
+  return null
+}
+
 // ─── FAQ ──────────────────────────────────────────────────────────────────────
 
 export async function getPublicFaq(): Promise<FaqItem[]> {
