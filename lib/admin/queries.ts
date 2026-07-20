@@ -229,6 +229,27 @@ export async function getPageSection(page: string, sectionKey: string) {
   return data
 }
 
+// ─── Media assets ─────────────────────────────────────────────────────────────
+
+export async function getMediaAssets(opts?: {
+  search?: string
+  tag?: string
+  limit?: number
+  offset?: number
+}) {
+  const supabase = await createClient()
+  let q = supabase
+    .from('media_assets')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+
+  if (opts?.search) q = q.ilike('filename', `%${opts.search}%`)
+  if (opts?.tag) q = q.contains('tags', [opts.tag])
+  if (opts?.limit) q = q.limit(opts.limit)
+  if (opts?.offset) q = q.range(opts.offset, (opts.offset + (opts.limit ?? 48)) - 1)
+  return q
+}
+
 // ─── Audit log ────────────────────────────────────────────────────────────────
 
 export async function getAuditLog(opts?: {

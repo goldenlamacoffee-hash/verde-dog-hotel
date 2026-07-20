@@ -20,7 +20,7 @@ export async function updateReservationNotes(id: string, internalNotes: string) 
   const supabase = await createClient()
   const { error } = await supabase
     .from('reservations')
-    .update({ internal_notes: internalNotes })
+    .update({ notes: internalNotes })
     .eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath(`/admin/rezervace/${id}`)
@@ -304,4 +304,33 @@ export async function deletePricingRule(id: string) {
   const { error } = await supabase.from('pricing_rules').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/sluzby')
+}
+
+// ─── Media assets ─────────────────────────────────────────────────────────────
+
+export async function upsertMediaAsset(data: {
+  id?: string
+  filename: string
+  storage_path: string
+  public_url?: string
+  mime_type?: string
+  size_bytes?: number
+  alt?: string
+  tags?: string[]
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const payload = { ...data, uploaded_by: user?.id }
+  const { error } = data.id
+    ? await supabase.from('media_assets').update({ ...payload, id: undefined }).eq('id', data.id)
+    : await supabase.from('media_assets').insert(payload)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/media')
+}
+
+export async function deleteMediaAsset(id: string) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('media_assets').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/media')
 }
