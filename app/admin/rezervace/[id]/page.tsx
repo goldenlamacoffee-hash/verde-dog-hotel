@@ -16,6 +16,13 @@ export default async function ReservationDetailPage({ params }: { params: Promis
   ])
   if (error || !res) notFound()
 
+  // Extract flat dogs list for DocumentsPanel dog picker
+  const reservationDogs = (res.reservation_dogs ?? []).map((rd: any) => ({
+    id:         rd.dog?.id   as string,
+    name:       rd.dog?.name as string,
+    dog_breeds: rd.dog?.dog_breeds ?? null,
+  })).filter((d: any) => d.id)
+
   function fmt(d: string) {
     return new Date(d).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' })
   }
@@ -127,7 +134,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           </Section>
 
           <Section title="Dokumenty">
-            <DocumentsPanel reservationId={id} initialDocs={docs ?? []} />
+            <DocumentsPanel reservationId={id} initialDocs={docs ?? []} dogs={reservationDogs} />
           </Section>
 
           <Section title="Systém">

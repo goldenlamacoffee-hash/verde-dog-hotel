@@ -16,9 +16,13 @@ interface Props {
   navItems?: NavItem[]
   /** CMS-provided CTA label */
   ctaLabel?: string
+  /** CMS-managed logo override for dark backgrounds (transparent header state) */
+  lightLogoSrc?: string
+  /** CMS-managed logo override for light backgrounds (solid/scrolled header state) */
+  darkLogoSrc?: string
 }
 
-export function SiteHeader({ navItems, ctaLabel }: Props) {
+export function SiteHeader({ navItems, ctaLabel, darkLogoSrc, lightLogoSrc }: Props) {
   const navigation = navItems ?? staticNavigation
   const pathname = usePathname()
   const [scrolled, setScrolled] = useState(false)
@@ -42,7 +46,11 @@ export function SiteHeader({ navItems, ctaLabel }: Props) {
       )}
     >
       <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Logo tone={solid ? 'dark' : 'light'} priority />
+        <Logo
+          tone={solid ? 'dark' : 'light'}
+          src={solid ? darkLogoSrc : lightLogoSrc}
+          priority
+        />
 
         <nav aria-label="Hlavní navigace" className="hidden lg:block">
           <ul className="flex items-center gap-1">

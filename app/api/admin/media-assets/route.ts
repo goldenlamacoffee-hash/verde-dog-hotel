@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getAdminProfile, canManageContent } from '@/lib/auth'
+import { getAdminProfile, canManageContent } from '@/lib/auth/roles'
 
 export async function GET(req: NextRequest) {
   const profile = await getAdminProfile()

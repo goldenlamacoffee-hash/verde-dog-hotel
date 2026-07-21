@@ -3,11 +3,18 @@
 /**
  * DocumentsPanel
  * Displayed on the reservation detail page.
- * Allows uploading PDFs/images, editing labels, viewing (signed URL), and deleting.
+ * Allows uploading PDFs/images with optional dog association and document type,
+ * editing labels, viewing (signed URL), and deleting.
  */
 
 import { useState, useRef, useTransition } from 'react'
 import { updateReservationDocumentLabel } from '@/lib/admin/actions'
+
+export interface ReservationDog {
+  id: string
+  name: string
+  dog_breeds?: { name: string } | null
+}
 
 export interface ReservationDoc {
   id: string
@@ -16,16 +23,38 @@ export interface ReservationDoc {
   mime_type: string | null
   size_bytes: number | null
   created_at: string
+  document_type?: string | null
+  dog_id?: string | null
 }
 
 interface Props {
   reservationId: string
   initialDocs: ReservationDoc[]
+  dogs?: ReservationDog[]
+}
+
+const DOCUMENT_TYPES = [
+  { value: '',              label: 'Typ dokumentu (volitelné)' },
+  { value: 'vaccination',   label: 'Očkovací průkaz' },
+  { value: 'health_cert',   label: 'Zdravotní osvědčení' },
+  { value: 'insurance',     label: 'Pojistka' },
+  { value: 'contract',      label: 'Smlouva' },
+  { value: 'invoice',       label: 'Faktura' },
+  { value: 'other',         label: 'Ostatní' },
+]
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  vaccination: 'Očkovací průkaz',
+  health_cert: 'Zdravotní osvědčení',
+  insurance:   'Pojistka',
+  contract:    'Smlouva',
+  invoice:     'Faktura',
+  other:       'Ostatní',
 }
 
 function fmtBytes(n: number | null) {
   if (!n) return '—'
-  if (n < 1024)           return `${n} B`
+  if (n < 1024)          return `${n} B`
   if (n < 1024 * 1024)   return `${(n / 1024).toFixed(0)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
@@ -55,16 +84,20 @@ function DownloadIcon(p: React.SVGProps<SVGSVGElement>) {
 // ─── Single document row ──────────────────────────────────────────────────────
 function DocRow({
   doc,
+  dogs,
   onDelete,
 }: {
   doc: ReservationDoc
+  dogs?: ReservationDog[]
   onDelete: (id: string) => void
 }) {
-  const [label, setLabel]   = useState(doc.label ?? '')
-  const [editing, setEditing] = useState(false)
+  const [label, setLabel]           = useState(doc.label ?? '')
+  const [editing, setEditing]       = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [isPending, startTransition]  = useTransition()
   const [confirmDel, setConfirmDel]   = useState(false)
+
+  const dog = dogs?.find(d => d.id === doc.dog_id)
 
   async function download() {
     setDownloading(true)
@@ -102,10 +135,10 @@ function DocRow({
 
   return (
     <div
-      className="flex items-center gap-3 py-2.5 text-sm"
+      className="flex items-start gap-3 py-2.5 text-sm"
       style={{ borderBottom: '1px solid var(--admin-card-border)' }}
     >
-      <DocIcon className="w-5 h-5 shrink-0 opacity-50" style={{ color: 'var(--admin-text-muted)' }} />
+      <DocIcon className="w-5 h-5 mt-0.5 shrink-0 opacity-50" style={{ color: 'var(--admin-text-muted)' }} />
 
       <div className="flex-1 min-w-0">
         {editing ? (
@@ -116,27 +149,62 @@ function DocRow({
               autoFocus
               className="flex-1 rounded px-2 py-1 text-xs"
               style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
-              onKeyDown={e => { if (e.key === 'Enter') saveLabel(); if (e.key === 'Escape') setEditing(false) }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) saveLabel()
+                if (e.key === 'Escape') setEditing(false)
+              }}
             />
-            <button onClick={saveLabel} disabled={isPending} className="text-xs px-2 py-1 rounded" style={{ background: 'var(--admin-accent)', color: '#fff' }}>
+            <button
+              onClick={saveLabel}
+              disabled={isPending}
+              className="text-xs px-2 py-1 rounded text-white disabled:opacity-50"
+              style={{ background: 'var(--admin-accent)' }}
+            >
               {isPending ? '…' : 'OK'}
             </button>
-            <button onClick={() => setEditing(false)} className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>Zrušit</button>
+            <button
+              onClick={() => setEditing(false)}
+              className="text-xs"
+              style={{ color: 'var(--admin-text-muted)' }}
+            >
+              Zrušit
+            </button>
           </div>
         ) : (
           <div>
             <p className="font-medium truncate" style={{ color: 'var(--admin-text)' }}>
               {label || doc.filename}
             </p>
-            <p className="text-[11px] mt-0.5" style={{ color: 'var(--admin-text-muted)' }}>
-              {doc.mime_type ?? '—'} · {fmtBytes(doc.size_bytes)} ·{' '}
-              {new Date(doc.created_at).toLocaleDateString('cs-CZ')}
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <span className="text-[11px]" style={{ color: 'var(--admin-text-muted)' }}>
+                {doc.mime_type ?? '—'} · {fmtBytes(doc.size_bytes)} ·{' '}
+                {new Date(doc.created_at).toLocaleDateString('cs-CZ')}
+              </span>
+              {dog && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  style={{ background: 'var(--verde-cream, #f5f0e8)', color: 'var(--verde-deep, #1a2e1a)' }}
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0112 0v2"/>
+                  </svg>
+                  {dog.name}
+                </span>
+              )}
+              {doc.document_type && DOC_TYPE_LABELS[doc.document_type] && (
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  style={{ background: 'var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
+                >
+                  {DOC_TYPE_LABELS[doc.document_type]}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center gap-1 shrink-0 mt-0.5">
         <button
           onClick={download}
           disabled={downloading}
@@ -147,23 +215,36 @@ function DocRow({
           <DownloadIcon className="w-4 h-4" />
         </button>
         {!editing && (
-          <button onClick={() => setEditing(true)} className="px-2 py-1 rounded text-[11px]"
-            style={{ color: 'var(--admin-accent)' }}>
+          <button
+            onClick={() => setEditing(true)}
+            className="px-2 py-1 rounded text-[11px]"
+            style={{ color: 'var(--admin-accent)' }}
+          >
             Štítek
           </button>
         )}
         {confirmDel ? (
           <>
-            <button onClick={handleDelete} disabled={isPending} className="px-2 py-1 rounded text-[11px] text-white bg-red-600 disabled:opacity-50">
+            <button
+              onClick={handleDelete}
+              disabled={isPending}
+              className="px-2 py-1 rounded text-[11px] text-white bg-red-600 disabled:opacity-50"
+            >
               Smazat
             </button>
-            <button onClick={() => setConfirmDel(false)} className="px-2 py-1 rounded text-[11px]"
-              style={{ color: 'var(--admin-text-muted)' }}>
+            <button
+              onClick={() => setConfirmDel(false)}
+              className="px-2 py-1 rounded text-[11px]"
+              style={{ color: 'var(--admin-text-muted)' }}
+            >
               Ne
             </button>
           </>
         ) : (
-          <button onClick={() => setConfirmDel(true)} className="px-2 py-1 rounded text-[11px] text-red-500">
+          <button
+            onClick={() => setConfirmDel(true)}
+            className="px-2 py-1 rounded text-[11px] text-red-500"
+          >
             Smazat
           </button>
         )}
@@ -175,15 +256,19 @@ function DocRow({
 // ─── Upload row ───────────────────────────────────────────────────────────────
 function UploadRow({
   reservationId,
+  dogs,
   onUploaded,
 }: {
   reservationId: string
+  dogs?: ReservationDog[]
   onUploaded: (doc: ReservationDoc) => void
 }) {
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [label, setLabel] = useState('')
+  const fileRef   = useRef<HTMLInputElement>(null)
+  const [label,   setLabel]   = useState('')
+  const [docType, setDocType] = useState('')
+  const [dogId,   setDogId]   = useState('')
   const [progress, setProgress] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error,    setError]    = useState<string | null>(null)
 
   async function upload(file: File) {
     const ALLOWED = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
@@ -201,7 +286,9 @@ function UploadRow({
     const fd = new FormData()
     fd.append('file',           file)
     fd.append('reservation_id', reservationId)
-    if (label.trim()) fd.append('label', label.trim())
+    if (label.trim())  fd.append('label',         label.trim())
+    if (docType)       fd.append('document_type',  docType)
+    if (dogId)         fd.append('dog_id',         dogId)
 
     const res  = await fetch('/api/admin/reservation-documents', { method: 'POST', body: fd })
     const json = await res.json()
@@ -209,11 +296,43 @@ function UploadRow({
     if (!res.ok || !json.doc) { setError(json.error ?? 'Nahrávání selhalo'); return }
     onUploaded(json.doc as ReservationDoc)
     setLabel('')
+    setDocType('')
+    setDogId('')
+  }
+
+  const selectCls = "rounded-lg px-2 py-1.5 text-xs flex-1 min-w-0"
+  const selectStyle = {
+    background: 'var(--admin-bg)',
+    border: '1px solid var(--admin-card-border)',
+    color: 'var(--admin-text)',
   }
 
   return (
-    <div className="pt-3">
-      <div className="flex gap-2 items-center">
+    <div className="pt-3 space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <input
+          value={label}
+          onChange={e => setLabel(e.target.value)}
+          placeholder="Štítek (volitelné)"
+          className={selectCls}
+          style={selectStyle}
+        />
+        <select value={docType} onChange={e => setDocType(e.target.value)} className={selectCls} style={selectStyle}>
+          {DOCUMENT_TYPES.map(t => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+        {dogs && dogs.length > 0 && (
+          <select value={dogId} onChange={e => setDogId(e.target.value)} className={selectCls} style={selectStyle}>
+            <option value="">Pes (volitelné)</option>
+            {dogs.map(d => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
         <input
           ref={fileRef}
           type="file"
@@ -221,48 +340,43 @@ function UploadRow({
           className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = '' }}
         />
-        <input
-          value={label}
-          onChange={e => setLabel(e.target.value)}
-          placeholder="Štítek (volitelné)"
-          className="flex-1 rounded-lg px-3 py-2 text-xs"
-          style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
-        />
         <button
           onClick={() => fileRef.current?.click()}
           disabled={!!progress}
           className="px-4 py-2 rounded-lg text-xs font-medium text-white disabled:opacity-50"
           style={{ background: 'var(--admin-accent)' }}
         >
-          {progress ? progress : '+ Nahrát'}
+          {progress ?? '+ Nahrát soubor'}
         </button>
+        {error && <p className="text-xs text-red-500">{error}</p>}
       </div>
-      {error && <p className="text-xs mt-1 text-red-500">{error}</p>}
     </div>
   )
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function DocumentsPanel({ reservationId, initialDocs }: Props) {
+export function DocumentsPanel({ reservationId, initialDocs, dogs }: Props) {
   const [docs, setDocs] = useState(initialDocs)
 
   return (
     <div className="space-y-1">
       {docs.length === 0 ? (
         <p className="text-xs py-2" style={{ color: 'var(--admin-text-muted)' }}>
-          Žádné dokumenty
+          Zatím žádné dokumenty
         </p>
       ) : (
         docs.map(doc => (
           <DocRow
             key={doc.id}
             doc={doc}
+            dogs={dogs}
             onDelete={id => setDocs(prev => prev.filter(d => d.id !== id))}
           />
         ))
       )}
       <UploadRow
         reservationId={reservationId}
+        dogs={dogs}
         onUploaded={doc => setDocs(prev => [...prev, doc])}
       />
     </div>

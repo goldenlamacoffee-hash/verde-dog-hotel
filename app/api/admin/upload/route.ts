@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminProfile, canManageContent } from '@/lib/auth'
+import { getAdminProfile, canManageContent } from '@/lib/auth/roles'
 import { uploadMediaAsset, replaceMediaAsset } from '@/lib/media'
 
 const ALLOWED_TYPES = new Set([

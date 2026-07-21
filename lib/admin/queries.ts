@@ -256,7 +256,7 @@ export async function getReservationDocuments(reservationId: string) {
   const supabase = await createClient()
   return supabase
     .from('reservation_documents')
-    .select('id, filename, label, mime_type, size_bytes, created_at')
+    .select('id, filename, label, mime_type, size_bytes, created_at, document_type, dog_id')
     .eq('reservation_id', reservationId)
     .order('created_at', { ascending: true })
 }
