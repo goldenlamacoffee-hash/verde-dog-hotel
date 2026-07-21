@@ -1,18 +1,22 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
+import Image from 'next/image'
+import { Image as ImageIcon, X } from 'lucide-react'
 import { updateSiteSetting } from '@/lib/admin/actions'
 
 interface Props {
-  initialContact: Record<string, string> | null
-  initialSeo: Record<string, string> | null
-  initialCapacity: Record<string, any> | null
+  initialContact:  Record<string, string> | null
+  initialSeo:      Record<string, string> | null
+  initialCapacity: Record<string, unknown> | null
+  initialBrand:    Record<string, string> | null
 }
 
-export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity }: Props) {
-  const [contact, setContact] = useState(initialContact ?? {})
-  const [seo, setSeo] = useState(initialSeo ?? {})
-  const [capacity, setCapacity] = useState(initialCapacity ?? {})
+export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity, initialBrand }: Props) {
+  const [contact,  setContact]  = useState(initialContact  ?? {})
+  const [seo,      setSeo]      = useState(initialSeo      ?? {})
+  const [capacity, setCapacity] = useState<Record<string, unknown>>(initialCapacity ?? {})
+  const [brand,    setBrand]    = useState<Record<string, string>>(initialBrand ?? {})
   const [isPending, startTransition] = useTransition()
   const [saved, setSaved] = useState<string | null>(null)
 
@@ -67,7 +71,7 @@ export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity
         <Field label="Maximální počet psů">
           <input
             type="number"
-            value={capacity.maxDogs ?? 12}
+            value={(capacity.maxDogs as number) ?? 12}
             onChange={e => setCapacity(p => ({ ...p, maxDogs: Number(e.target.value) }))}
             className="w-full rounded-lg px-3 py-2 text-sm outline-none"
             style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
@@ -76,7 +80,7 @@ export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity
         <Field label="Počet boxů">
           <input
             type="number"
-            value={capacity.boxes ?? 12}
+            value={(capacity.boxes as number) ?? 12}
             onChange={e => setCapacity(p => ({ ...p, boxes: Number(e.target.value) }))}
             className="w-full rounded-lg px-3 py-2 text-sm outline-none"
             style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
@@ -84,10 +88,100 @@ export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity
         </Field>
         <SaveButton label="Uložit kapacitu" saved={saved === 'capacity'} isPending={isPending} onClick={() => save('capacity', capacity)} />
       </Section>
+
+      {/* Brand */}
+      <Section title="Brand a média">
+        <p className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+          Loga a OG obrázek. Nahrajte soubor tlačítkem nebo vložte URL z knihovny médií.
+          Prázdné pole zachová výchozí statické logo z kódu.
+        </p>
+        {([
+          ['Logo — tmavé (na světlém pozadí)', 'darkLogo'],
+          ['Logo — světlé (na tmavém pozadí)', 'lightLogo'],
+          ['OG obrázek (1200 × 630 px)', 'ogImage'],
+        ] as [string, string][]).map(([label, key]) => (
+          <BrandImageField
+            key={key}
+            label={label}
+            value={brand[key] ?? ''}
+            onChange={url => setBrand(p => ({ ...p, [key]: url }))}
+          />
+        ))}
+        <SaveButton label="Uložit brand" saved={saved === 'brand'} isPending={isPending} onClick={() => save('brand', brand)} />
+      </Section>
     </div>
   )
 }
 
+// ─── Brand image field with inline upload ─────────────────────────────────────
+function BrandImageField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (url: string) => void
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadErr, setUploadErr] = useState<string | null>(null)
+
+  async function handleUpload(file: File) {
+    if (!file.type.startsWith('image/')) { setUploadErr('Pouze obrázky'); return }
+    if (file.size > 10 * 1024 * 1024)   { setUploadErr('Max 10 MB');     return }
+    setUploadErr(null)
+    setUploading(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('alt_text', label)
+    const res  = await fetch('/api/admin/upload', { method: 'POST', body: fd })
+    const json = await res.json()
+    setUploading(false)
+    if (!res.ok || !json.asset) { setUploadErr(json.error ?? 'Chyba'); return }
+    onChange(json.asset.url as string)
+  }
+
+  return (
+    <Field label={label}>
+      <div className="flex items-center gap-2">
+        {value && (
+          <div className="relative h-9 w-14 shrink-0 overflow-hidden rounded" style={{ background: 'var(--admin-bg)' }}>
+            <Image src={value} alt="" fill className="object-contain" unoptimized />
+          </div>
+        )}
+        <input
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="https://… nebo nahrajte soubor"
+          className="flex-1 rounded-lg px-3 py-1.5 text-xs outline-none"
+          style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
+        />
+        <input ref={fileRef} type="file" accept="image/*" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = '' }} />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          title="Nahrát soubor"
+          className="shrink-0 rounded-lg p-1.5 disabled:opacity-50"
+          style={{ background: 'var(--admin-accent-light)', color: 'var(--admin-accent)', border: '1px solid var(--admin-card-border)' }}
+        >
+          <ImageIcon className="size-4" />
+        </button>
+        {value && (
+          <button type="button" onClick={() => onChange('')} className="shrink-0 p-1" title="Zrušit">
+            <X className="size-3.5 text-red-400" />
+          </button>
+        )}
+      </div>
+      {uploading && <p className="text-xs mt-1" style={{ color: 'var(--admin-text-muted)' }}>Nahrávám…</p>}
+      {uploadErr && <p className="text-xs mt-1 text-red-500">{uploadErr}</p>}
+    </Field>
+  )
+}
+
+// ─── Shared primitives ────────────────────────────────────────────────────────
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl p-5 space-y-4" style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}>

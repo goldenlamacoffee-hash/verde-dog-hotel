@@ -398,8 +398,15 @@ export async function upsertMediaAsset(data: {
 }
 
 export async function deleteMediaAsset(id: string) {
-  const supabase = await createClient()
-  const { error } = await supabase.from('media_assets').delete().eq('id', id)
-  if (error) throw new Error(error.message)
+  const { deleteMediaAsset: deleteLib } = await import('@/lib/media')
+  const { error } = await deleteLib(id)
+  if (error) throw new Error(error)
   revalidatePath('/admin/media')
+}
+
+export async function checkMediaAssetUsage(
+  assetUrl: string,
+): Promise<{ usageCount: number; locations: string[] }> {
+  const { checkMediaAssetUsage: checkLib } = await import('@/lib/media')
+  return checkLib(assetUrl)
 }

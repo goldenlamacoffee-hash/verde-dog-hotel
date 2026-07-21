@@ -32,16 +32,23 @@ export interface ReservationDocument {
   storage_path: string
   filename: string
   label: string | null
+  document_type: string | null
+  dog_id: string | null
   mime_type: string | null
   size_bytes: number | null
   uploaded_by: string | null
   created_at: string
 }
 
+export interface MediaUsageInfo {
+  usageCount: number
+  locations: string[]
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MEDIA_BUCKET = 'media'
-const DOCS_BUCKET  = 'reservation-docs'
+const MEDIA_BUCKET   = 'media'
+const DOCS_BUCKET    = 'reservation-docs'
 const SIGNED_URL_TTL = 3600 // 1 hour for private docs
 
 // ─── Media bucket helpers ─────────────────────────────────────────────────────
@@ -56,8 +63,6 @@ export async function uploadMediaAsset(
 ): Promise<{ asset: MediaAsset | null; error: string | null }> {
   const supabase = await createClient()
 
-  // Derive a unique storage path: {timestamp}-{sanitised-filename}
-  const ext  = file.name.split('.').pop() ?? 'bin'
   const safe = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_').toLowerCase()
   const path = `${Date.now()}-${safe}`
 
@@ -65,17 +70,11 @@ export async function uploadMediaAsset(
 
   const { error: storageErr } = await supabase.storage
     .from(MEDIA_BUCKET)
-    .upload(path, arrayBuffer, {
-      contentType: file.type,
-      upsert: false,
-    })
+    .upload(path, arrayBuffer, { contentType: file.type, upsert: false })
 
   if (storageErr) return { asset: null, error: storageErr.message }
 
-  const { data: urlData } = supabase.storage
-    .from(MEDIA_BUCKET)
-    .getPublicUrl(path)
-
+  const { data: urlData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path)
   const publicUrl = urlData.publicUrl
 
   const { data: row, error: dbErr } = await supabase
@@ -94,12 +93,108 @@ export async function uploadMediaAsset(
     .single()
 
   if (dbErr) {
-    // Attempt to clean up the orphaned storage object
     await supabase.storage.from(MEDIA_BUCKET).remove([path])
     return { asset: null, error: dbErr.message }
   }
 
   return { asset: row as MediaAsset, error: null }
+}
+
+/**
+ * Replace the file for an existing media asset while keeping the same DB row
+ * and public URL. Re-uploads to the same storage_path with upsert:true so all
+ * existing references automatically point to the new file.
+ */
+export async function replaceMediaAsset(
+  assetId: string,
+  file: File,
+): Promise<{ asset: MediaAsset | null; error: string | null }> {
+  const supabase = await createClient()
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from('media_assets')
+    .select('*')
+    .eq('id', assetId)
+    .single()
+
+  if (fetchErr || !existing) return { asset: null, error: fetchErr?.message ?? 'Not found' }
+
+  const arrayBuffer = await file.arrayBuffer()
+  const { error: storageErr } = await supabase.storage
+    .from(MEDIA_BUCKET)
+    .upload(existing.storage_path, arrayBuffer, {
+      contentType: file.type,
+      upsert: true,
+    })
+
+  if (storageErr) return { asset: null, error: storageErr.message }
+
+  // Update mime_type, size_bytes and filename; URL stays the same
+  const { data: updated, error: dbErr } = await supabase
+    .from('media_assets')
+    .update({
+      filename:   file.name,
+      mime_type:  file.type || null,
+      size_bytes: file.size || null,
+    })
+    .eq('id', assetId)
+    .select()
+    .single()
+
+  if (dbErr) return { asset: null, error: dbErr.message }
+
+  return { asset: updated as MediaAsset, error: null }
+}
+
+/**
+ * Check how many places in the CMS reference a given asset URL.
+ * Scans: gallery_items, page_sections (content JSON), site_settings (value JSON).
+ */
+export async function checkMediaAssetUsage(
+  assetUrl: string,
+): Promise<MediaUsageInfo> {
+  const supabase = await createClient()
+  const locations: string[] = []
+
+  // gallery_items.image_url
+  const { count: galCount } = await supabase
+    .from('gallery_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('image_url', assetUrl)
+  if ((galCount ?? 0) > 0) locations.push(`Galerie (${galCount} položek)`)
+
+  // page_sections.content — stored as JSONB; use ilike on cast text
+  const { data: sectionRows } = await supabase
+    .from('page_sections')
+    .select('page, section_key')
+    .textSearch('content::text', `'${assetUrl}'`, { config: 'simple' })
+    .limit(20)
+  // fall back to ilike because textSearch may not be set up on content
+  const { data: sectionRowsIlike } = await supabase
+    .from('page_sections')
+    .select('page, section_key')
+    .filter('content::text', 'ilike', `%${assetUrl}%`)
+    .limit(20)
+
+  const merged = sectionRowsIlike ?? sectionRows ?? []
+  if (merged.length > 0) {
+    const keys = merged.map((r: { page: string; section_key: string }) => `${r.page}/${r.section_key}`).join(', ')
+    locations.push(`Stránkové sekce: ${keys}`)
+  }
+
+  // site_settings.value — stored as JSONB
+  const { data: settingRows } = await supabase
+    .from('site_settings')
+    .select('key')
+    .filter('value::text', 'ilike', `%${assetUrl}%`)
+    .limit(20)
+  if ((settingRows ?? []).length > 0) {
+    const keys = (settingRows ?? []).map((r: { key: string }) => r.key).join(', ')
+    locations.push(`Nastavení webu: ${keys}`)
+  }
+
+  const usageCount = locations.length
+  return { usageCount, locations }
 }
 
 /**
@@ -129,7 +224,7 @@ export async function deleteMediaAsset(
 }
 
 /**
- * Update alt_text and tags for a media asset without re-uploading.
+ * Update alt_text, caption and tags for a media asset without re-uploading.
  */
 export async function updateMediaAssetMeta(
   assetId: string,
@@ -140,9 +235,9 @@ export async function updateMediaAssetMeta(
   const { error } = await supabase
     .from('media_assets')
     .update({
-      ...(meta.altText  !== undefined && { alt_text: meta.altText }),
-      ...(meta.caption  !== undefined && { caption:  meta.caption }),
-      ...(meta.tags     !== undefined && { tags:     meta.tags    }),
+      ...(meta.altText !== undefined && { alt_text: meta.altText }),
+      ...(meta.caption !== undefined && { caption:  meta.caption }),
+      ...(meta.tags    !== undefined && { tags:     meta.tags    }),
     })
     .eq('id', assetId)
 
@@ -159,6 +254,8 @@ export async function uploadReservationDocument(
   reservationId: string,
   file: File,
   label?: string,
+  dogId?: string,
+  documentType?: string,
 ): Promise<{ doc: ReservationDocument | null; error: string | null }> {
   const supabase = await createClient()
 
@@ -169,10 +266,7 @@ export async function uploadReservationDocument(
 
   const { error: storageErr } = await supabase.storage
     .from(DOCS_BUCKET)
-    .upload(path, arrayBuffer, {
-      contentType: file.type,
-      upsert: false,
-    })
+    .upload(path, arrayBuffer, { contentType: file.type, upsert: false })
 
   if (storageErr) return { doc: null, error: storageErr.message }
 
@@ -182,9 +276,11 @@ export async function uploadReservationDocument(
       reservation_id: reservationId,
       storage_path:   path,
       filename:       file.name,
-      label:          label ?? null,
-      mime_type:      file.type || null,
-      size_bytes:     file.size || null,
+      label:          label          ?? null,
+      document_type:  documentType   ?? null,
+      dog_id:         dogId          ?? null,
+      mime_type:      file.type      || null,
+      size_bytes:     file.size      || null,
     })
     .select()
     .single()
@@ -204,11 +300,9 @@ export async function getDocumentSignedUrl(
   storagePath: string,
 ): Promise<{ url: string | null; error: string | null }> {
   const supabase = await createClient()
-
   const { data, error } = await supabase.storage
     .from(DOCS_BUCKET)
     .createSignedUrl(storagePath, SIGNED_URL_TTL)
-
   return { url: data?.signedUrl ?? null, error: error?.message ?? null }
 }
 

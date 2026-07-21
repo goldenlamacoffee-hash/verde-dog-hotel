@@ -24,18 +24,22 @@ export function Accommodation({ cms }: Props) {
         />
 
         <div className="mt-14 grid gap-6 md:grid-cols-3">
-          {accommodationCards.map((card) => (
+          {accommodationCards.map((card, idx) => {
+            const imgSrc = (cms?.[`card_${idx}_image`] as string) || card.image
+            const imgAlt = (cms?.[`card_${idx}_image_alt`] as string) || card.imageAlt
+            return (
             <article
               key={card.title}
               className="group flex flex-col overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-verde-deep/5"
             >
               <div className="relative aspect-[4/3] overflow-hidden">
                 <Image
-                  src={card.image}
-                  alt={card.imageAlt}
+                  src={imgSrc}
+                  alt={imgAlt}
                   fill
                   sizes="(min-width: 768px) 33vw, 100vw"
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  unoptimized={imgSrc.startsWith('http')}
                 />
               </div>
               <div className="flex flex-1 flex-col p-6">
@@ -56,7 +60,8 @@ export function Accommodation({ cms }: Props) {
                 ) : null}
               </div>
             </article>
-          ))}
+            )
+          })}
         </div>
       </div>
     </section>

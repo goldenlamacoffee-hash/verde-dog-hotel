@@ -11,16 +11,19 @@ export function Hero({ cms }: Props) {
   const badge       = (cms?.badge       as string) || siteSettings.tagline
   const ctaPrimary  = (cms?.cta_primary  as string) || 'Rezervovat pobyt'
   const ctaSecondary= (cms?.cta_secondary as string) || 'Jak to u nás vypadá'
+  const imageUrl    = (cms?.image_url   as string) || '/images/hero-verde.png'
+  const imageAlt    = (cms?.image_alt   as string) || 'Ohař v klidné přírodní krajině při západu slunce'
 
   return (
     <section className="relative isolate flex min-h-[92vh] items-end overflow-hidden">
       <Image
-        src="/images/hero-verde.png"
-        alt="Ohař v klidné přírodní krajině při západu slunce"
+        src={imageUrl}
+        alt={imageAlt}
         fill
         priority
         sizes="100vw"
         className="object-cover"
+        unoptimized={imageUrl.startsWith('http')}
       />
       <div
         className="absolute inset-0 bg-gradient-to-t from-verde-deep/95 via-verde-deep/70 to-verde-deep/35"

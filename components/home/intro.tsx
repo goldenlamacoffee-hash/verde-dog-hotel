@@ -9,18 +9,21 @@ export function Intro({ cms }: Props) {
   const title      = (cms?.title      as string) || 'Pobyt, který respektuje povahu vašeho psa'
   const lead       = (cms?.lead       as string) || 'Věříme, že spokojený pes potřebuje klid, prostor a lidský přístup. Proto ve Verde spojujeme přírodní prostředí s péčí přizpůsobenou každému psovi zvlášť — od krmení a pohybu až po odpočinek.'
   const body       = (cms?.body       as string) || 'Nacházíme se v klidné lokalitě Brno – venkov, obklopeni zelení a dostatkem místa k procházkám. Ať už jedete na dovolenou nebo služební cestu, váš pes u nás najde bezpečné zázemí a lidi, kterým na něm záleží.'
-  const ctaLabel   = (cms?.cta_label  as string) || 'Více o hotelu'
+  const ctaLabel   = (cms?.cta_label   as string) || 'Více o hotelu'
+  const imageUrl   = (cms?.image_url   as string) || '/images/intro-detail-01.png'
+  const imageAlt   = (cms?.image_alt   as string) || 'Detail klidného ohaře v přírodě'
 
   return (
     <section className="bg-background">
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 md:py-28 lg:grid-cols-2 lg:gap-16 lg:px-8">
         <div className="relative order-last aspect-[4/5] overflow-hidden rounded-2xl lg:order-first">
           <Image
-            src="/images/intro-detail-01.png"
-            alt="Detail klidného ohaře v přírodě"
+            src={imageUrl}
+            alt={imageAlt}
             fill
             sizes="(min-width: 1024px) 40vw, 100vw"
             className="object-cover"
+            unoptimized={imageUrl.startsWith('http')}
           />
           <div className="absolute inset-0 ring-1 ring-inset ring-verde-deep/10" aria-hidden="true" />
         </div>
