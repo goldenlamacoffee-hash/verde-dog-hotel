@@ -3,7 +3,14 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const NAV = [
+interface NavItem {
+  href: string
+  label: string
+  icon: (p: React.SVGProps<SVGSVGElement>) => React.ReactElement
+  exact?: boolean
+}
+
+const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Přehled',
     items: [
@@ -26,6 +33,7 @@ const NAV = [
       { href: '/admin/faq', label: 'FAQ', icon: HelpIcon },
       { href: '/admin/recenze', label: 'Recenze', icon: StarIcon },
       { href: '/admin/galerie', label: 'Galerie', icon: ImageIcon },
+      { href: '/admin/media', label: 'Média', icon: FolderIcon },
       { href: '/admin/obsah', label: 'Nastavení webu', icon: SettingsIcon },
     ],
   },
@@ -33,6 +41,7 @@ const NAV = [
     group: 'Systém',
     items: [
       { href: '/admin/uzivatele', label: 'Uživatelé', icon: ShieldIcon },
+      { href: '/admin/audit', label: 'Audit log', icon: AuditIcon },
     ],
   },
 ]
@@ -141,6 +150,12 @@ function SettingsIcon(p: React.SVGProps<SVGSVGElement>) {
 }
 function ShieldIcon(p: React.SVGProps<SVGSVGElement>) {
   return <svg {...p} fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+}
+function AuditIcon(p: React.SVGProps<SVGSVGElement>) {
+  return <svg {...p} fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+}
+function FolderIcon(p: React.SVGProps<SVGSVGElement>) {
+  return <svg {...p} fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
 }
 function ExternalLinkIcon(p: React.SVGProps<SVGSVGElement>) {
   return <svg {...p} fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>

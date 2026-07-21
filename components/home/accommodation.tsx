@@ -4,32 +4,42 @@ import { ArrowUpRight } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
 import { accommodationCards } from '@/content/home'
 
-export function Accommodation() {
+interface Props { cms?: Record<string, unknown> }
+
+export function Accommodation({ cms }: Props) {
+  const eyebrow    = (cms?.eyebrow    as string) || 'Zázemí a péče'
+  const title      = (cms?.title      as string) || 'Prostředí, kde se pes cítí bezpečně'
+  const description= (cms?.description as string) || 'Spojujeme pohodlné vnitřní zázemí s bezpečným venkovním prostorem v přírodě.'
+
   return (
     <section className="bg-secondary paper-texture">
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 md:py-28 lg:px-8">
         <SectionHeading
           align="center"
-          eyebrow="Zázemí a péče"
-          title="Prostředí, kde se pes cítí bezpečně"
+          eyebrow={eyebrow}
+          title={title}
           withSprig
-          description="Spojujeme pohodlné vnitřní zázemí s bezpečným venkovním prostorem v přírodě."
+          description={description}
           className="mx-auto max-w-2xl"
         />
 
         <div className="mt-14 grid gap-6 md:grid-cols-3">
-          {accommodationCards.map((card) => (
+          {accommodationCards.map((card, idx) => {
+            const imgSrc = (cms?.[`card_${idx}_image`] as string) || card.image
+            const imgAlt = (cms?.[`card_${idx}_image_alt`] as string) || card.imageAlt
+            return (
             <article
               key={card.title}
               className="group flex flex-col overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-verde-deep/5"
             >
               <div className="relative aspect-[4/3] overflow-hidden">
                 <Image
-                  src={card.image}
-                  alt={card.imageAlt}
+                  src={imgSrc}
+                  alt={imgAlt}
                   fill
                   sizes="(min-width: 768px) 33vw, 100vw"
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  unoptimized={imgSrc.startsWith('http')}
                 />
               </div>
               <div className="flex flex-1 flex-col p-6">
@@ -50,7 +60,8 @@ export function Accommodation() {
                 ) : null}
               </div>
             </article>
-          ))}
+            )
+          })}
         </div>
       </div>
     </section>

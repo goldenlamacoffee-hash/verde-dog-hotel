@@ -1,12 +1,17 @@
 import { PillarIcon } from '@/components/brand/pillar-icon'
-import { pillars } from '@/content/home'
+import { pillars as staticPillars } from '@/content/home'
 
-export function Pillars() {
+interface Props { cms?: Record<string, unknown> }
+
+export function Pillars({ cms }: Props) {
+  // cms.items can override the static pillars array with {icon, title, description}[]
+  const items = (Array.isArray(cms?.items) ? cms.items as typeof staticPillars : null) ?? staticPillars
+
   return (
     <section className="bg-primary text-primary-foreground" aria-label="Naše hodnoty">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-16 lg:px-8">
         <ul className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
-          {pillars.map((pillar, i) => (
+          {items.map((pillar, i) => (
             <li
               key={pillar.title}
               className="flex flex-col items-center gap-4 text-center lg:border-l lg:border-verde-white/15 lg:px-4 lg:first:border-l-0"

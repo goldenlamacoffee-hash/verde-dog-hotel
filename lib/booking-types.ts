@@ -8,6 +8,7 @@
 
 export type BookingStatus =
   | 'draft'
+  | 'inquiry'
   | 'request_submitted'
   | 'under_review'
   | 'awaiting_deposit'

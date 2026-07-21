@@ -53,7 +53,7 @@ export function AdminLoginForm() {
           value={email}
           onChange={e => setEmail(e.target.value)}
           className="w-full rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2"
-          style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)', focusRingColor: 'var(--admin-accent)' }}
+          style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
           autoComplete="email"
         />
       </div>

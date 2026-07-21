@@ -11,6 +11,8 @@ interface LogoProps {
   /** classes applied to the <img> — override to resize (defaults to h-11 sm:h-12) */
   imgClassName?: string
   className?: string
+  /** CMS-managed override URL — falls back to static asset when empty */
+  src?: string
 }
 
 const LOGO_SRC = {
@@ -31,7 +33,11 @@ export function Logo({
   priority = false,
   imgClassName,
   className,
+  src,
 }: LogoProps) {
+  const resolvedSrc = src || LOGO_SRC[tone]
+  const isExternal  = resolvedSrc.startsWith('http')
+
   return (
     <Link
       href="/"
@@ -39,11 +45,12 @@ export function Logo({
       className={cn('inline-flex items-center', className)}
     >
       <Image
-        src={LOGO_SRC[tone]}
+        src={resolvedSrc}
         alt=""
         width={LOGO_W}
         height={LOGO_H}
         priority={priority}
+        unoptimized={isExternal}
         className={cn('h-11 w-auto sm:h-12', imgClassName)}
       />
     </Link>

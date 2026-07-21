@@ -171,3 +171,110 @@ export async function getReservationsForRange(from: string, to: string) {
     .not('status', 'in', '("cancelled","no_show")')
     .order('arrival_date')
 }
+
+// ─── Payments ─────────────────────────────────────────────────────────────────
+
+export async function getPaymentsForReservation(reservationId: string) {
+  const supabase = await createClient()
+  return supabase
+    .from('payments')
+    .select('*')
+    .eq('reservation_id', reservationId)
+    .order('paid_at', { ascending: false })
+}
+
+// ─── Capacity overrides ───────────────────────────────────────────────────────
+
+export async function getCapacityOverrides(opts?: { from?: string; to?: string }) {
+  const supabase = await createClient()
+  let q = supabase
+    .from('capacity_overrides')
+    .select('*')
+    .order('date_from')
+  if (opts?.from) q = q.gte('date_to', opts.from)
+  if (opts?.to) q = q.lte('date_from', opts.to)
+  return q
+}
+
+// ─── Pricing rules ────────────────────────────────────────────────────────────
+
+export async function getAdminPricingRules() {
+  const supabase = await createClient()
+  return supabase
+    .from('pricing_rules')
+    .select('*')
+    .order('sort_order')
+}
+
+// ─── Page sections (CMS) ─────────────────────────────────────────────────────
+
+export async function getPageSections(page?: string) {
+  const supabase = await createClient()
+  let q = supabase
+    .from('page_sections')
+    .select('*')
+    .order('sort_order')
+  if (page) q = q.eq('page', page)
+  return q
+}
+
+export async function getPageSection(page: string, sectionKey: string) {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('page_sections')
+    .select('*')
+    .eq('page', page)
+    .eq('section_key', sectionKey)
+    .single()
+  return data
+}
+
+// ─── Media assets ─────────────────────────────────────────────────────────────
+
+export async function getMediaAssets(opts?: {
+  search?: string
+  tag?: string
+  limit?: number
+  offset?: number
+}) {
+  const supabase = await createClient()
+  let q = supabase
+    .from('media_assets')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+
+  if (opts?.search) q = q.ilike('filename', `%${opts.search}%`)
+  if (opts?.tag) q = q.contains('tags', [opts.tag])
+  if (opts?.limit) q = q.limit(opts.limit)
+  if (opts?.offset) q = q.range(opts.offset, (opts.offset + (opts.limit ?? 48)) - 1)
+  return q
+}
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+
+export async function getReservationDocuments(reservationId: string) {
+  const supabase = await createClient()
+  return supabase
+    .from('reservation_documents')
+    .select('id, filename, label, mime_type, size_bytes, created_at, document_type, dog_id')
+    .eq('reservation_id', reservationId)
+    .order('created_at', { ascending: true })
+}
+
+export async function getAuditLog(opts?: {
+  tableName?: string
+  recordId?: string
+  limit?: number
+  offset?: number
+}) {
+  const supabase = await createClient()
+  let q = supabase
+    .from('audit_logs')
+    .select('*', { count: 'exact' })
+    .order('changed_at', { ascending: false })
+  if (opts?.tableName) q = q.eq('table_name', opts.tableName)
+  if (opts?.recordId)  q = q.eq('record_id',  opts.recordId)
+  if (opts?.limit)     q = q.limit(opts.limit)
+  if (opts?.offset)    q = q.range(opts.offset, (opts.offset + (opts.limit ?? 50)) - 1)
+  return q
+}

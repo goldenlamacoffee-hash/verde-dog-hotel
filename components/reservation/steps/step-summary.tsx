@@ -1,6 +1,6 @@
 'use client'
 
-import { Pencil } from 'lucide-react'
+import { Loader2, Pencil } from 'lucide-react'
 import { StepIntro } from '../step-nav'
 import { CtaButton } from '@/components/common/cta-button'
 import { services } from '@/content/services'
@@ -11,6 +11,8 @@ interface Props {
   draft: ReservationDraft
   estimate: Estimate
   errors: Record<string, string>
+  submitError?: string | null
+  submitting?: boolean
   onChange: (patch: Partial<ReservationDraft>) => void
   onNext: () => void
   onBack: () => void
@@ -52,6 +54,8 @@ export function StepSummary({
   draft,
   estimate,
   errors,
+  submitError,
+  submitting,
   onChange,
   onNext,
   onBack,
@@ -178,16 +182,30 @@ export function StepSummary({
         </div>
       </fieldset>
 
+      {submitError ? (
+        <p role="alert" className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm font-medium text-destructive">
+          {submitError}
+        </p>
+      ) : null}
+
       <div className="mt-10 flex flex-col-reverse gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-verde-moss transition-colors hover:text-verde-green"
+          disabled={submitting}
+          className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-verde-moss transition-colors hover:text-verde-green disabled:opacity-50"
         >
           Zpět
         </button>
-        <CtaButton type="button" onClick={onNext} size="md">
-          Odeslat nezávaznou žádost
+        <CtaButton type="button" onClick={onNext} size="md" disabled={submitting}>
+          {submitting ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Odesílám...
+            </span>
+          ) : (
+            'Odeslat nezávaznou žádost'
+          )}
         </CtaButton>
       </div>
     </div>

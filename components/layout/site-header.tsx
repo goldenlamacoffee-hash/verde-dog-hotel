@@ -4,12 +4,26 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { navigation } from '@/content/site'
+import { navigation as staticNavigation } from '@/content/site'
 import { Logo } from '@/components/brand/logo'
 import { CtaLink } from '@/components/common/cta-button'
 import { MobileNav } from './mobile-nav'
 
-export function SiteHeader() {
+interface NavItem { label: string; href: string }
+
+interface Props {
+  /** CMS-provided nav items; falls back to static navigation when undefined */
+  navItems?: NavItem[]
+  /** CMS-provided CTA label */
+  ctaLabel?: string
+  /** CMS-managed logo override for dark backgrounds (transparent header state) */
+  lightLogoSrc?: string
+  /** CMS-managed logo override for light backgrounds (solid/scrolled header state) */
+  darkLogoSrc?: string
+}
+
+export function SiteHeader({ navItems, ctaLabel, darkLogoSrc, lightLogoSrc }: Props) {
+  const navigation = navItems ?? staticNavigation
   const pathname = usePathname()
   const [scrolled, setScrolled] = useState(false)
 
@@ -32,7 +46,11 @@ export function SiteHeader() {
       )}
     >
       <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Logo tone={solid ? 'dark' : 'light'} priority />
+        <Logo
+          tone={solid ? 'dark' : 'light'}
+          src={solid ? darkLogoSrc : lightLogoSrc}
+          priority
+        />
 
         <nav aria-label="Hlavní navigace" className="hidden lg:block">
           <ul className="flex items-center gap-1">
@@ -77,9 +95,9 @@ export function SiteHeader() {
             variant={solid ? 'primary' : 'light'}
             className="hidden sm:inline-flex"
           >
-            Rezervovat pobyt
+            {ctaLabel ?? 'Rezervovat pobyt'}
           </CtaLink>
-          <MobileNav solid={solid} />
+          <MobileNav solid={solid} navItems={navigation} />
         </div>
       </div>
     </header>

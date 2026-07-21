@@ -4,6 +4,7 @@ import { Cormorant_Garamond, Manrope } from 'next/font/google'
 import { siteSettings } from '@/content/site'
 import { SiteHeader } from '@/components/layout/site-header'
 import { SiteFooter } from '@/components/layout/site-footer'
+import { getPublicPageSection, getPublicSiteSetting } from '@/lib/public-data'
 import './globals.css'
 
 const cormorant = Cormorant_Garamond({
@@ -59,11 +60,19 @@ export const viewport: Viewport = {
   themeColor: '#193a22',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const [headerCms, brand] = await Promise.all([
+    getPublicPageSection<{
+      nav?: { label: string; href: string }[]
+      cta?: { label: string; href: string }
+    }>('global', 'header'),
+    getPublicSiteSetting<{ darkLogo?: string; lightLogo?: string; ogImage?: string }>('brand'),
+  ])
+
   return (
     <html
       lang="cs"
@@ -77,7 +86,12 @@ export default function RootLayout({
           Přeskočit na obsah
         </a>
         <div className="flex min-h-dvh flex-col">
-          <SiteHeader />
+          <SiteHeader
+            navItems={headerCms?.nav}
+            ctaLabel={headerCms?.cta?.label}
+            darkLogoSrc={brand?.darkLogo}
+            lightLogoSrc={brand?.lightLogo}
+          />
           <main id="main" className="flex-1">
             {children}
           </main>
