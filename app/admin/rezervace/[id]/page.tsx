@@ -1,16 +1,18 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getReservationById, getPaymentsForReservation } from '@/lib/admin/queries'
+import { getReservationById, getPaymentsForReservation, getReservationDocuments } from '@/lib/admin/queries'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { StatusBadge } from '@/components/admin/ui/status-badge'
 import { ReservationActions } from '@/components/admin/reservations/reservation-actions'
 import { PaymentsPanel } from '@/components/admin/reservations/payments-panel'
+import { DocumentsPanel } from '@/components/admin/reservations/documents-panel'
 
 export default async function ReservationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [{ data: res, error }, { data: payments }] = await Promise.all([
+  const [{ data: res, error }, { data: payments }, { data: docs }] = await Promise.all([
     getReservationById(id),
     getPaymentsForReservation(id),
+    getReservationDocuments(id),
   ])
   if (error || !res) notFound()
 
@@ -122,6 +124,10 @@ export default async function ReservationDetailPage({ params }: { params: Promis
             <InfoRow label="Záloha uhrazena" value={res.deposit_paid ? 'Ano' : 'Ne'} />
             <InfoRow label="Plná úhrada" value={res.paid_in_full ? 'Ano' : 'Ne'} />
             <InfoRow label="Zdroj" value={res.source ?? '—'} />
+          </Section>
+
+          <Section title="Dokumenty">
+            <DocumentsPanel reservationId={id} initialDocs={docs ?? []} />
           </Section>
 
           <Section title="Systém">

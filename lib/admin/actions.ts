@@ -168,6 +168,33 @@ export async function deleteGalleryItem(id: string) {
   revalidatePath('/admin/galerie')
 }
 
+/**
+ * Batch-update sort_order for a list of gallery items after drag-reorder.
+ * @param items Array of { id, sort_order } — only the ordering columns.
+ */
+export async function reorderGalleryItems(items: { id: string; sort_order: number }[]) {
+  const supabase = await createClient()
+  const updates = items.map(({ id, sort_order }) =>
+    supabase.from('gallery_items').update({ sort_order }).eq('id', id),
+  )
+  const results = await Promise.all(updates)
+  const failed = results.find(r => r.error)
+  if (failed?.error) throw new Error(failed.error.message)
+  revalidatePath('/admin/galerie')
+  revalidatePath('/galerie')
+}
+
+// ─── Reservation documents ────────────────────────────────────────────────────
+
+export async function updateReservationDocumentLabel(docId: string, label: string) {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('reservation_documents')
+    .update({ label })
+    .eq('id', docId)
+  if (error) throw new Error(error.message)
+}
+
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
 export async function addPayment(data: {

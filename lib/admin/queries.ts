@@ -252,6 +252,15 @@ export async function getMediaAssets(opts?: {
 
 // ─── Audit log ────────────────────────────────────────────────────────────────
 
+export async function getReservationDocuments(reservationId: string) {
+  const supabase = await createClient()
+  return supabase
+    .from('reservation_documents')
+    .select('id, filename, label, mime_type, size_bytes, created_at')
+    .eq('reservation_id', reservationId)
+    .order('created_at', { ascending: true })
+}
+
 export async function getAuditLog(opts?: {
   tableName?: string
   recordId?: string
