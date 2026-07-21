@@ -1,9 +1,12 @@
-import { getReservationsForRange, getSiteSetting, getCapacityOverrides } from '@/lib/admin/queries'
+import { getSiteSetting, getCapacityOverrides } from '@/lib/admin/queries'
+import { updateSiteSetting } from '@/lib/admin/actions'
+import { getOccupancyForRange } from '@/lib/capacity'
 import { PageHeader } from '@/components/admin/ui/page-header'
-import { StatusBadge } from '@/components/admin/ui/status-badge'
 import { CapacityOverridesPanel } from '@/components/admin/capacity/capacity-overrides-panel'
 
 export const metadata = { title: 'Kapacita | VERDE Admin' }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function addDays(date: Date, days: number) {
   const d = new Date(date)
@@ -15,135 +18,218 @@ function fmtDate(d: Date) {
   return d.toISOString().split('T')[0]
 }
 
-function dayLabel(d: Date) {
-  return d.toLocaleDateString('cs-CZ', { weekday: 'short', day: 'numeric', month: 'numeric' })
+function fmtDisplay(iso: string) {
+  return new Date(iso).toLocaleDateString('cs-CZ', {
+    weekday: 'short',
+    day:     'numeric',
+    month:   'numeric',
+  })
 }
+
+// ─── Capacity editor server action ────────────────────────────────────────────
+
+async function saveCapacity(formData: FormData) {
+  'use server'
+  const raw = Number(formData.get('maxDogs'))
+  if (isNaN(raw) || raw < 1 || raw > 50) return
+  await updateSiteSetting('capacity', { maxDogs: raw, boxes: raw })
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function CapacityPage() {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const fromStr = fmtDate(today)
-  const toStr = fmtDate(addDays(today, 27))
+  const fromStr  = fmtDate(today)
+  const toStr    = fmtDate(addDays(today, 30))
 
-  const [{ data: reservations }, capacitySetting, { data: overrides }] = await Promise.all([
-    getReservationsForRange(fromStr, toStr),
+  const [capacitySetting, { data: overrides }, occupancyResult] = await Promise.all([
     getSiteSetting('capacity'),
     getCapacityOverrides(),
+    getOccupancyForRange(fromStr, toStr),
   ])
 
-  const maxDogs: number = capacitySetting?.maxDogs ?? 12
-  const days: Date[] = Array.from({ length: 28 }, (_, i) => addDays(today, i))
+  const maxDogs: number =
+    capacitySetting && typeof capacitySetting === 'object'
+      ? ((capacitySetting as Record<string, unknown>).maxDogs as number) ?? 6
+      : 6
 
-  // Build occupancy map: date string -> count of dogs
-  const occupancy: Record<string, number> = {}
-  const resByDay: Record<string, any[]> = {}
-  for (const d of days) {
-    const key = fmtDate(d)
-    occupancy[key] = 0
-    resByDay[key] = []
-  }
-  for (const r of (reservations ?? [])) {
-    const arr = new Date(r.arrival_date)
-    const dep = new Date(r.departure_date)
-    const dogCount = r.reservation_dogs?.length || 1
-    for (const d of days) {
-      if (d >= arr && d < dep) {
-        const key = fmtDate(d)
-        occupancy[key] = (occupancy[key] ?? 0) + dogCount
-        resByDay[key].push(r)
-      }
-    }
-  }
+  const nights = 'error' in occupancyResult ? [] : occupancyResult
+
+  // Warn if any confirmed future occupancy exceeds a possible new cap
+  const maxFutureBooked = nights.reduce((m, n) => Math.max(m, n.booked), 0)
 
   return (
-    <div className="space-y-6 max-w-7xl">
+    <div className="space-y-6 max-w-5xl">
       <PageHeader
         title="Kapacita"
-        description={`Přehled obsazenosti na 28 dní · max. ${maxDogs} psů`}
+        description="Správa maximální kapacity, blokací a přehled obsazenosti"
       />
 
-      {/* Occupancy grid */}
+      {/* ── Capacity editor ─────────────────────────────────────────────────── */}
       <div
         className="rounded-2xl p-5"
         style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
       >
-        <h2 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--admin-text-muted)' }}>
-          Obsazenost boxů
+        <h2
+          className="text-xs font-semibold uppercase tracking-wider mb-4"
+          style={{ color: 'var(--admin-text-muted)' }}
+        >
+          Maximální kapacita hotelu
         </h2>
-        <div className="grid grid-cols-7 gap-2">
-          {days.map(d => {
-            const key = fmtDate(d)
-            const count = occupancy[key] ?? 0
-            const pct = count / maxDogs
-            const isToday = key === fromStr
-            const bgColor = pct >= 1 ? '#dc2626' : pct >= 0.75 ? '#d97706' : pct >= 0.4 ? '#16a34a' : '#e5e7eb'
-            const textColor = pct >= 0.4 ? '#fff' : 'var(--admin-text)'
-            return (
-              <div
-                key={key}
-                className="rounded-xl p-2 text-center transition-colors"
-                style={{
-                  background: bgColor,
-                  color: textColor,
-                  outline: isToday ? '2px solid var(--admin-accent)' : 'none',
-                  outlineOffset: '2px',
-                }}
-              >
-                <p className="text-[10px] font-medium opacity-80">{dayLabel(d)}</p>
-                <p className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>{count}</p>
-                <p className="text-[10px] opacity-70">/ {maxDogs}</p>
-              </div>
-            )
-          })}
-        </div>
-        <div className="flex gap-4 mt-4 text-xs" style={{ color: 'var(--admin-text-muted)' }}>
-          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded bg-[#e5e7eb]" /> Volno</span>
-          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded bg-[#16a34a]" /> Obsazeno 40–75%</span>
-          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded bg-[#d97706]" /> Téměř plno</span>
-          <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded bg-[#dc2626]" /> Plno</span>
-        </div>
+
+        <form action={saveCapacity} className="flex items-end gap-4 flex-wrap">
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="maxDogs"
+              className="text-xs font-medium"
+              style={{ color: 'var(--admin-text-muted)' }}
+            >
+              Počet míst (psů) celkem
+            </label>
+            <input
+              id="maxDogs"
+              name="maxDogs"
+              type="number"
+              min={1}
+              max={50}
+              defaultValue={maxDogs}
+              className="w-24 rounded-lg px-3 py-2 text-sm font-semibold text-center"
+              style={{
+                background: 'var(--admin-bg)',
+                border:     '1px solid var(--admin-card-border)',
+                color:      'var(--admin-text)',
+              }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity hover:opacity-80"
+            style={{ background: 'var(--admin-accent)', color: '#fff' }}
+          >
+            Uložit kapacitu
+          </button>
+
+          <p className="text-xs self-center" style={{ color: 'var(--admin-text-muted)' }}>
+            Aktuálně nastaveno: <span className="font-bold" style={{ color: 'var(--admin-text)' }}>{maxDogs} psů</span>
+          </p>
+        </form>
+
+        {maxFutureBooked > 0 && (
+          <p className="mt-3 text-xs px-3 py-2 rounded-lg" style={{ background: '#fef9c3', color: '#92400e' }}>
+            Upozornění: v nejbližších 30 dnech je nejvyšší obsazenost {maxFutureBooked} psů.
+            Nastavení kapacity pod tuto hodnotu zablokuje nové rezervace.
+          </p>
+        )}
       </div>
 
-      {/* Capacity overrides */}
+      {/* ── 30-day occupancy table ──────────────────────────────────────────── */}
       <div
         className="rounded-2xl p-5"
         style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
       >
-        <h2 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--admin-text-muted)' }}>
+        <h2
+          className="text-xs font-semibold uppercase tracking-wider mb-4"
+          style={{ color: 'var(--admin-text-muted)' }}
+        >
+          Obsazenost — příštích 30 nocí
+        </h2>
+
+        {'error' in occupancyResult ? (
+          <p className="text-sm" style={{ color: '#dc2626' }}>
+            Nepodařilo se načíst data obsazenosti.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--admin-card-border)' }}>
+                  {['Datum', 'Obsazeno', 'Kapacita', 'Volno', 'Stav'].map((h) => (
+                    <th
+                      key={h}
+                      className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider"
+                      style={{ color: 'var(--admin-text-muted)' }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {nights.map((row) => {
+                  const pct     = row.booked / row.maxDogs
+                  const isToday = row.date === fromStr
+                  let statusLabel: string
+                  let statusColor: string
+                  if (row.free === 0) {
+                    statusLabel = 'Plno'
+                    statusColor = '#dc2626'
+                  } else if (pct >= 0.75) {
+                    statusLabel = 'Téměř plno'
+                    statusColor = '#d97706'
+                  } else if (pct >= 0.25) {
+                    statusLabel = 'Obsazeno'
+                    statusColor = '#16a34a'
+                  } else {
+                    statusLabel = 'Volno'
+                    statusColor = 'var(--admin-text-muted)'
+                  }
+                  return (
+                    <tr
+                      key={row.date}
+                      style={{
+                        borderBottom:  '1px solid var(--admin-card-border)',
+                        background:    isToday ? 'var(--admin-bg)' : undefined,
+                        fontWeight:    isToday ? 600 : undefined,
+                      }}
+                    >
+                      <td className="px-3 py-2 tabular-nums" style={{ color: 'var(--admin-text)' }}>
+                        {isToday && (
+                          <span
+                            className="mr-1.5 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase"
+                            style={{ background: 'var(--admin-accent)', color: '#fff' }}
+                          >
+                            Dnes
+                          </span>
+                        )}
+                        {fmtDisplay(row.date)}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums font-semibold" style={{ color: 'var(--admin-text)' }}>
+                        {row.booked}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums" style={{ color: 'var(--admin-text-muted)' }}>
+                        {row.maxDogs}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums font-semibold" style={{ color: row.free === 0 ? '#dc2626' : 'var(--admin-text)' }}>
+                        {row.free}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="text-xs font-semibold" style={{ color: statusColor }}>
+                          {statusLabel}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Capacity overrides ──────────────────────────────────────────────── */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
+      >
+        <h2
+          className="text-xs font-semibold uppercase tracking-wider mb-4"
+          style={{ color: 'var(--admin-text-muted)' }}
+        >
           Blokace a omezení kapacity
         </h2>
         <CapacityOverridesPanel overrides={overrides ?? []} />
-      </div>
-
-      {/* Today's reservations */}
-      <div
-        className="rounded-2xl p-5"
-        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
-      >
-        <h2 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--admin-text-muted)' }}>
-          Dnes ubytovaní
-        </h2>
-        {(resByDay[fromStr] ?? []).length === 0 ? (
-          <p className="text-sm" style={{ color: 'var(--admin-text-muted)' }}>Dnes nikdo ubytovaný.</p>
-        ) : (
-          <div className="space-y-2">
-            {resByDay[fromStr].map((r: any) => (
-              <div key={r.id} className="flex items-center justify-between text-sm p-3 rounded-lg"
-                   style={{ background: 'var(--admin-bg)' }}>
-                <div>
-                  <span className="font-mono text-xs font-semibold" style={{ color: 'var(--admin-accent)' }}>{r.ref_number}</span>
-                  <span className="ml-3" style={{ color: 'var(--admin-text)' }}>
-                    {r.customer ? `${r.customer.first_name} ${r.customer.last_name}` : '—'}
-                  </span>
-                  <span className="ml-2 text-xs" style={{ color: 'var(--admin-text-muted)' }}>
-                    {r.reservation_dogs?.map((rd: any) => rd.dog?.name).join(', ')}
-                  </span>
-                </div>
-                <StatusBadge status={r.status} />
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )

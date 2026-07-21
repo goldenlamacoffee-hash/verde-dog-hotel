@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getDashboardStats, getReservations } from '@/lib/admin/queries'
+import { getOccupancyForDate, getOccupancyForRange } from '@/lib/capacity'
 import { StatCard } from '@/components/admin/ui/stat-card'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { StatusBadge } from '@/components/admin/ui/status-badge'
@@ -10,10 +11,20 @@ function fmt(date: string) {
   return new Date(date).toLocaleDateString('cs-CZ', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+function addDays(iso: string, days: number) {
+  const d = new Date(iso)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
 export default async function AdminDashboardPage() {
-  const [stats, { data: recent }] = await Promise.all([
+  const today = new Date().toISOString().split('T')[0]
+
+  const [stats, { data: recent }, todayOccupancy, weekOccupancy] = await Promise.all([
     getDashboardStats(),
     getReservations({ limit: 8 }),
+    getOccupancyForDate(today),
+    getOccupancyForRange(today, addDays(today, 7)),
   ])
 
   return (
@@ -29,6 +40,95 @@ export default async function AdminDashboardPage() {
         <StatCard label="Nadcházející" value={stats.upcoming} sub="potvrzené rezervace" />
         <StatCard label="Zákazníků celkem" value={stats.totalCustomers} />
         <StatCard label="Rezervací celkem" value={stats.totalReservations} />
+      </div>
+
+      {/* Live occupancy card */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2
+            className="text-xs font-semibold uppercase tracking-wider"
+            style={{ color: 'var(--admin-text-muted)' }}
+          >
+            Obsazenost dnes
+          </h2>
+          <Link
+            href="/admin/kapacita"
+            className="text-xs font-medium"
+            style={{ color: 'var(--admin-accent)' }}
+          >
+            Správa kapacity →
+          </Link>
+        </div>
+
+        {/* Today summary */}
+        <div className="flex items-baseline gap-2 mb-4">
+          <span
+            className="text-4xl font-bold"
+            style={{ fontFamily: 'var(--font-serif)', color: 'var(--admin-text)' }}
+          >
+            {todayOccupancy.queryFailed ? '—' : todayOccupancy.booked}
+          </span>
+          <span className="text-lg" style={{ color: 'var(--admin-text-muted)' }}>
+            / {todayOccupancy.queryFailed ? '?' : todayOccupancy.maxDogs} psů
+          </span>
+          {!todayOccupancy.queryFailed && todayOccupancy.free === 0 && (
+            <span
+              className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: '#fee2e2', color: '#dc2626' }}
+            >
+              Plno
+            </span>
+          )}
+          {!todayOccupancy.queryFailed && todayOccupancy.free > 0 && (
+            <span
+              className="ml-2 text-xs font-medium"
+              style={{ color: 'var(--admin-text-muted)' }}
+            >
+              {todayOccupancy.free} volných míst
+            </span>
+          )}
+        </div>
+
+        {/* 7-day mini bar chart */}
+        {'error' in weekOccupancy ? (
+          <p className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+            Data nedostupná.
+          </p>
+        ) : (
+          <div className="flex gap-1.5 items-end h-12">
+            {weekOccupancy.map((n) => {
+              const pct     = n.maxDogs > 0 ? n.booked / n.maxDogs : 0
+              const barPct  = Math.min(pct, 1)
+              const color   = pct >= 1 ? '#dc2626' : pct >= 0.75 ? '#d97706' : '#16a34a'
+              const isToday = n.date === today
+              return (
+                <div key={n.date} className="flex flex-col items-center gap-1 flex-1">
+                  <div className="w-full flex items-end" style={{ height: '36px' }}>
+                    <div
+                      className="w-full rounded-t transition-all"
+                      style={{
+                        height:     `${Math.max(barPct * 100, 4)}%`,
+                        background: color,
+                        opacity:    isToday ? 1 : 0.65,
+                        outline:    isToday ? '2px solid var(--admin-accent)' : 'none',
+                        outlineOffset: '2px',
+                      }}
+                    />
+                  </div>
+                  <span
+                    className="text-[9px] tabular-nums"
+                    style={{ color: isToday ? 'var(--admin-text)' : 'var(--admin-text-muted)', fontWeight: isToday ? 700 : 400 }}
+                  >
+                    {new Date(n.date).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' })}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Recent reservations */}
