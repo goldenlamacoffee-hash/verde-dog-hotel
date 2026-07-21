@@ -116,10 +116,14 @@ export async function checkAvailability(
   const { data: overlapping, error } = await query
 
   if (error) {
-    // If we can't check, fail safe by allowing — the DB insert will be the
-    // final arbiter; we don't want a query error to block all bookings.
+    // DB error — fail closed. A broken availability check must never allow
+    // an overbooking; return unavailable so the request is rejected safely.
     console.error('[verde] availability check failed:', error.message)
-    return { available: true, spotsLeft: globalMax }
+    return {
+      available: false,
+      spotsLeft: 0,
+      reason: 'Nepodařilo se ověřit dostupnost. Zkuste to prosím znovu.',
+    }
   }
 
   // Sum dogs from each overlapping reservation via reservation_dogs

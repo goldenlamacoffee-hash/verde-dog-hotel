@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
-import { computeServerEstimate } from '@/lib/server-pricing'
-import { checkAvailability } from '@/lib/server-availability'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 // ─── Zod validation schema ─────────────────────────────────────────────────────
@@ -67,8 +65,8 @@ export async function POST(req: NextRequest) {
       {
         status: 429,
         headers: {
-          'Retry-After':       String(Math.ceil((limit.resetAt - Date.now()) / 1000)),
-          'X-RateLimit-Limit': '5',
+          'Retry-After':           String(Math.ceil((limit.resetAt - Date.now()) / 1000)),
+          'X-RateLimit-Limit':     '5',
           'X-RateLimit-Remaining': '0',
         },
       }
@@ -95,185 +93,101 @@ export async function POST(req: NextRequest) {
   const { draft } = parsed.data
 
   // 3. Business-logic date validation
-  const arrival   = new Date(draft.arrival)
-  const departure = new Date(draft.departure)
-  const today     = new Date()
+  const arrivalDate   = new Date(draft.arrival)
+  const departureDate = new Date(draft.departure)
+  const today         = new Date()
   today.setHours(0, 0, 0, 0)
 
-  if (arrival < today) {
+  if (arrivalDate < today) {
     return NextResponse.json({ error: 'Datum příjezdu nemůže být v minulosti.' }, { status: 422 })
   }
-  if (departure <= arrival) {
+  if (departureDate <= arrivalDate) {
     return NextResponse.json({ error: 'Datum odjezdu musí být po datu příjezdu.' }, { status: 422 })
   }
-  const nights = Math.round((departure.getTime() - arrival.getTime()) / 86_400_000)
+  const nights = Math.round(
+    (departureDate.getTime() - arrivalDate.getTime()) / 86_400_000
+  )
   if (nights > 30) {
     return NextResponse.json({ error: 'Maximální délka pobytu je 30 nocí.' }, { status: 422 })
   }
 
-  // 4. Availability check — must pass before any DB writes
-  const availability = await checkAvailability(
-    draft.arrival,
-    draft.departure,
-    draft.dogCount,
-  )
-  if (!availability.available) {
-    return NextResponse.json(
-      { error: availability.reason ?? 'Požadovaný termín není k dispozici.' },
-      { status: 409 }
-    )
-  }
+  // 4. Build RPC payload — map form shape to DB shape
+  const userAgent = req.headers.get('user-agent') ?? ''
 
-  // 5. Server-side authoritative price calculation
-  const estimate = await computeServerEstimate(
-    draft.arrival,
-    draft.departure,
-    draft.dogCount,
-    draft.selectedServices,
-  )
-
-  // 6. Persist to DB using service-role client (bypasses RLS)
-  const supabase = createServiceRoleClient()
-
-  try {
-    // 6a. Upsert customer
-    const { data: customer, error: custErr } = await supabase
-      .from('customers')
-      .upsert(
-        {
-          first_name: draft.owner.firstName,
-          last_name:  draft.owner.lastName,
-          email:      draft.owner.email,
-          phone:      draft.owner.phone  || null,
-          address:    draft.owner.address || null,
-        },
-        { onConflict: 'email', ignoreDuplicates: false }
-      )
-      .select('id')
-      .single()
-
-    if (custErr || !customer) {
-      console.error('[verde] customer upsert error:', custErr?.message)
-      return NextResponse.json({ error: 'Chyba při ukládání zákazníka.' }, { status: 500 })
-    }
-
-    // 6b. Generate collision-free reference number via DB sequence
-    const { data: refData, error: refErr } = await supabase
-      .rpc('next_reservation_ref')
-    if (refErr || !refData) {
-      console.error('[verde] ref RPC error:', refErr?.message)
-      return NextResponse.json({ error: 'Chyba při generování čísla rezervace.' }, { status: 500 })
-    }
-    const refNumber = refData as string
-
-    // 6c. Create reservation (using server-computed price)
-    const { data: reservation, error: resErr } = await supabase
-      .from('reservations')
-      .insert({
-        customer_id:    customer.id,
-        ref_number:     refNumber,
-        arrival_date:   draft.arrival,
-        departure_date: draft.departure,
-        total_price:    estimate.total,
-        deposit_amount: estimate.deposit,
-        deposit_paid:   false,
-        paid_in_full:   false,
-        status:         'inquiry',
-        source:         'web',
-        notes:          draft.owner.message || null,
-      })
-      .select('id')
-      .single()
-
-    if (resErr || !reservation) {
-      console.error('[verde] reservation insert error:', resErr?.message)
-      return NextResponse.json({ error: 'Chyba při vytváření rezervace.' }, { status: 500 })
-    }
-
-    // 6d. Upsert dogs + link to reservation
-    for (const dog of draft.dogs) {
-      if (!dog.name?.trim()) continue
-
-      const { data: dogRow, error: dogErr } = await supabase
-        .from('dogs')
-        .insert({
-          customer_id:    customer.id,
-          name:           dog.name.trim(),
-          breed_other:    dog.breed    || null,
-          sex:            dog.sex      || null,
-          neutered:       dog.neutered ?? false,
-          weight_kg:      dog.weightKg ? parseFloat(dog.weightKg) : null,
-          health_notes: [
-            dog.feedingRegime ? `Krmení: ${dog.feedingRegime}` : '',
-            dog.medications   ? `Léky: ${dog.medications}`     : '',
-            dog.note          || '',
-          ].filter(Boolean).join('\n') || null,
-          behavior_notes: dog.compatibility || null,
-        })
-        .select('id')
-        .single()
-
-      if (dogErr || !dogRow) continue
-
-      await supabase.from('reservation_dogs').insert({
-        reservation_id: reservation.id,
-        dog_id:         dogRow.id,
-      })
-    }
-
-    // 6e. Link selected add-on services
-    for (const serviceId of draft.selectedServices) {
-      const { data: svc } = await supabase
-        .from('services')
-        .select('price, unit')
-        .eq('id', serviceId)
-        .single()
-      if (!svc) continue
-
-      const unit = svc.unit ?? ''
-      const qty  = ['night', 'day', 'per-night', 'per-day'].includes(unit)
-        ? Math.max(nights, 1)
-        : 1
-
-      await supabase.from('reservation_services').insert({
-        reservation_id: reservation.id,
-        service_id:     serviceId,
-        quantity:       qty,
-        unit_price:     svc.price,
-        total_price:    qty * svc.price,
-      })
-    }
-
-    // 6f. Insert consent records
-    const ip        = getClientIp(req)
-    const userAgent = req.headers.get('user-agent') ?? ''
-    const consentRows = [
-      { type: 'truthfulness',           accepted: draft.consents.truthfulness          },
-      { type: 'stay_conditions',        accepted: draft.consents.stayConditions        },
-      { type: 'cancellation_conditions', accepted: draft.consents.cancellationConditions },
-      { type: 'gdpr',                   accepted: draft.consents.personalData          },
-      { type: 'marketing',              accepted: draft.consents.marketing ?? false    },
-    ].map((c) => ({
-      reservation_id: reservation.id,
-      type:           c.type,
-      accepted:       c.accepted,
-      ip_address:     ip,
-      user_agent:     userAgent,
+  // Dogs: map form fields to RPC jsonb shape
+  const dogsPayload = draft.dogs
+    .filter((d) => d.name?.trim())
+    .map((d) => ({
+      name:          d.name.trim(),
+      breed_other:   d.breed     || null,
+      sex:           d.sex       || null,
+      date_of_birth: null,  // form uses ageOrBirth text, not ISO date
+      weight_kg:     d.weightKg ? parseFloat(d.weightKg) : null,
     }))
 
-    await supabase.from('consents').insert(consentRows)
+  // Service IDs array (UUIDs)
+  const serviceIds = draft.selectedServices as string[]
 
-    // 6g. Mark customer as GDPR-consented when personalData accepted
-    if (draft.consents.personalData) {
-      await supabase
-        .from('customers')
-        .update({ gdpr_consent: true, gdpr_consent_at: new Date().toISOString() })
-        .eq('id', customer.id)
+  // Consents jsonb
+  const consentsPayload = {
+    truthfulness:           draft.consents.truthfulness,
+    stayConditions:         draft.consents.stayConditions,
+    cancellationConditions: draft.consents.cancellationConditions,
+    personalData:           draft.consents.personalData,
+    marketing:              draft.consents.marketing ?? false,
+  }
+
+  // 5. Single atomic RPC call — availability + pricing + all inserts in one transaction
+  const supabase = createServiceRoleClient()
+
+  const { data: rpcResult, error: rpcError } = await supabase.rpc(
+    'create_reservation',
+    {
+      p_arrival:       draft.arrival,
+      p_departure:     draft.departure,
+      p_dog_count:     draft.dogCount,
+      p_first_name:    draft.owner.firstName,
+      p_last_name:     draft.owner.lastName,
+      p_email:         draft.owner.email,
+      p_phone:         draft.owner.phone  || '',
+      p_customer_note: draft.owner.message || '',
+      p_dogs:          dogsPayload,
+      p_service_ids:   serviceIds,
+      p_consents:      consentsPayload,
+      p_ip_address:    ip,
+      p_user_agent:    userAgent,
     }
+  )
 
-    return NextResponse.json({ refNumber, reservationId: reservation.id }, { status: 201 })
-  } catch (err) {
-    console.error('[verde] rezervace API unexpected error:', err)
+  if (rpcError) {
+    const msg = rpcError.message ?? ''
+    // The RPC raises UNAVAILABLE: <reason> for capacity errors
+    if (msg.includes('UNAVAILABLE:')) {
+      const reason = msg.replace(/.*UNAVAILABLE:\s*/, '').trim()
+      return NextResponse.json(
+        { error: reason || 'Požadovaný termín není k dispozici.' },
+        { status: 409 }
+      )
+    }
+    console.error('[verde] create_reservation RPC error:', msg)
     return NextResponse.json({ error: 'Interní chyba serveru.' }, { status: 500 })
   }
+
+  const result = rpcResult as {
+    ref_number:      string
+    reservation_id:  string
+    total_price:     number
+    deposit_amount:  number
+    spots_remaining: number
+  }
+
+  return NextResponse.json(
+    {
+      refNumber:     result.ref_number,
+      reservationId: result.reservation_id,
+      totalPrice:    result.total_price,
+      depositAmount: result.deposit_amount,
+    },
+    { status: 201 }
+  )
 }
