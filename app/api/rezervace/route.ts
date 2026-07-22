@@ -47,7 +47,8 @@ const ReservationBodySchema = z.object({
     departure:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Neplatné datum odjezdu'),
     dogCount:         z.number().int().min(1).max(4),
     dogs:             z.array(DogSchema).min(1).max(4),
-    selectedServices: z.array(z.string().uuid()).max(20).optional().default([]),
+    // Frontend sends slugs (e.g. 'individual-walk') — resolved to UUIDs below
+    selectedServices: z.array(z.string().max(80)).max(20).optional().default([]),
     owner:            OwnerSchema,
     consents:         ConsentsSchema,
   }),
@@ -125,8 +126,25 @@ export async function POST(req: NextRequest) {
       weight_kg:     d.weightKg ? parseFloat(d.weightKg) : null,
     }))
 
-  // Service IDs array (UUIDs)
-  const serviceIds = draft.selectedServices as string[]
+  // Resolve service slugs → UUIDs. The frontend sends slugs matching the
+  // `slug` column in the `services` table; the RPC expects real UUIDs.
+  let serviceIds: string[] = []
+  if (draft.selectedServices.length > 0) {
+    const supabaseForLookup = createServiceRoleClient()
+    const { data: serviceRows, error: svcErr } = await supabaseForLookup
+      .from('services')
+      .select('id, slug')
+      .in('slug', draft.selectedServices)
+      .eq('active', true)
+    if (svcErr) {
+      console.error('[verde] services slug lookup error:', svcErr.message)
+      return NextResponse.json({ error: 'Interní chyba serveru.' }, { status: 500 })
+    }
+    const slugToId = new Map((serviceRows ?? []).map((r) => [r.slug, r.id]))
+    serviceIds = draft.selectedServices
+      .map((slug) => slugToId.get(slug))
+      .filter((id): id is string => Boolean(id))
+  }
 
   // Consents jsonb
   const consentsPayload = {

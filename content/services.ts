@@ -1,13 +1,17 @@
 import type { PriceItem, ServiceOption } from '@/lib/types'
 
 /**
- * Data-driven mock services. Prices are placeholders for the prototype and are
- * structured so they can later come from a database / CMS.
+ * Service definitions keyed by the slug stored in the `services` DB table.
+ * IDs here MUST match the `slug` column — the API route resolves slugs to
+ * UUIDs before calling the create_reservation RPC.
+ *
+ * DB slugs: overnight-stay, daycare, individual-walk, morning-walk,
+ *           afternoon-walk, bath, nail-trim, transport, vet-visit
  */
 export const services: ServiceOption[] = [
   {
-    id: 'standard',
-    title: 'Standardní pobyt',
+    id: 'overnight-stay',
+    title: 'Noční pobyt',
     description:
       'Ubytování ve vlastním klidném zázemí, krmení, každodenní pohyb a základní péče.',
     price: 490,
@@ -15,45 +19,59 @@ export const services: ServiceOption[] = [
     standard: true,
   },
   {
+    id: 'daycare',
+    title: 'Denní hlídání',
+    description: 'Celodenní péče o vašeho psa v průběhu pracovního dne.',
+    price: 390,
+    unit: 'per-day',
+  },
+  {
     id: 'individual-walk',
     title: 'Individuální procházka',
     description: 'Delší procházka jen s vaším psem nad rámec běžného programu.',
+    price: 250,
+    unit: 'per-walk',
+  },
+  {
+    id: 'morning-walk',
+    title: 'Ranní procházka',
+    description: 'Ranní vycházka před začátkem dne.',
     price: 150,
     unit: 'per-walk',
   },
   {
-    id: 'medication',
-    title: 'Podávání léků',
-    description: 'Pravidelné podávání léků podle pokynů majitele a veterináře.',
-    price: 60,
-    unit: 'per-day',
+    id: 'afternoon-walk',
+    title: 'Odpolední procházka',
+    description: 'Odpolední procházka s individuální pozorností.',
+    price: 150,
+    unit: 'per-walk',
   },
   {
-    id: 'own-food',
-    title: 'Vlastní krmení',
-    description: 'Podávání vámi dodaného krmiva podle zavedeného režimu.',
-    price: 0,
+    id: 'bath',
+    title: 'Koupání a sušení',
+    description: 'Profesionální koupel a sušení pro svěžího a upraveného psa.',
+    price: 350,
     unit: 'per-stay',
   },
   {
-    id: 'photos',
-    title: 'Fotografie z pobytu',
-    description: 'Pravidelné fotky vašeho psa z běžného dne v hotelu.',
-    price: 200,
+    id: 'nail-trim',
+    title: 'Stříhání drápků',
+    description: 'Bezpečné a šetrné zastřižení drápků zkušenou osobou.',
+    price: 150,
     unit: 'per-stay',
-  },
-  {
-    id: 'activity',
-    title: 'Individuální aktivita',
-    description: 'Cílený trénink, hry nebo klidný nácvik podle potřeb psa.',
-    price: 250,
-    unit: 'per-day',
   },
   {
     id: 'transport',
-    title: 'Vyzvednutí nebo doprava',
+    title: 'Svoz / odvoz',
     description: 'Doprava psa po domluvě v okolí Brna a přilehlých obcí.',
-    price: 400,
+    price: 200,
+    unit: 'one-off',
+  },
+  {
+    id: 'vet-visit',
+    title: 'Veterinární výjezd',
+    description: 'Doprovod k veterináři a asistence při vyšetření v případě potřeby.',
+    price: 500,
     unit: 'one-off',
   },
 ]
@@ -75,31 +93,45 @@ export const priceItems: PriceItem[] = [
     unit: 'per-night',
   },
   {
-    id: 'individual-walk',
-    title: 'Individuální procházka',
-    description: 'Procházka navíc jen s vaším psem.',
-    price: 150,
-    unit: 'per-walk',
-  },
-  {
-    id: 'medication',
-    title: 'Podávání léků',
-    description: 'Podávání léků dle pokynů.',
-    price: 60,
+    id: 'daycare',
+    title: 'Denní hlídání',
+    description: 'Celodenní péče o vašeho psa.',
+    price: 390,
     unit: 'per-day',
   },
   {
-    id: 'photos',
-    title: 'Fotografie z pobytu',
-    description: 'Fotoreport z běžného dne.',
-    price: 200,
+    id: 'individual-walk',
+    title: 'Individuální procházka',
+    description: 'Procházka navíc jen s vaším psem.',
+    price: 250,
+    unit: 'per-walk',
+  },
+  {
+    id: 'bath',
+    title: 'Koupání a sušení',
+    description: 'Profesionální koupel a sušení.',
+    price: 350,
+    unit: 'per-stay',
+  },
+  {
+    id: 'nail-trim',
+    title: 'Stříhání drápků',
+    description: 'Šetrné zastřižení drápků.',
+    price: 150,
     unit: 'per-stay',
   },
   {
     id: 'transport',
-    title: 'Vyzvednutí nebo doprava',
+    title: 'Svoz / odvoz',
     description: 'Doprava psa po domluvě.',
-    price: 400,
+    price: 200,
+    unit: 'one-off',
+  },
+  {
+    id: 'vet-visit',
+    title: 'Veterinární výjezd',
+    description: 'Doprovod k veterináři při potřebě.',
+    price: 500,
     unit: 'one-off',
   },
 ]
