@@ -97,12 +97,23 @@ export interface Estimate {
   deposit: number
 }
 
+/** Base overnight-stay price — mirrors services.price WHERE slug='overnight-stay' */
 const BASE_PER_NIGHT = 490
-const ADDITIONAL_DOG_PER_NIGHT = 390
+/**
+ * Multi-dog modifier — mirrors pricing_rules WHERE rule_type='multi_dog'.
+ * DB value: percent -20  →  additional dog = BASE × 0.80
+ */
+const MULTI_DOG_FACTOR = 0.8
+/**
+ * Long-stay modifier — mirrors pricing_rules WHERE rule_type='length_of_stay'.
+ * DB value: percent -10, min_nights 7  →  ≥7 nights: all per-night × 0.90
+ */
+const LONG_STAY_MIN_NIGHTS = 7
+const LONG_STAY_FACTOR = 0.9
 
 /**
- * Pure, deterministic estimate. Mirrors the anticipated server-side pricing so
- * it can later be replaced by an API call returning the same shape.
+ * Pure, deterministic estimate that mirrors the server-side pricing in
+ * create_reservation(). Keep in sync with DB pricing_rules when those change.
  */
 export function calculateEstimate(draft: ReservationDraft): Estimate {
   const nights = nightsBetween(draft.arrival, draft.departure)
@@ -110,19 +121,26 @@ export function calculateEstimate(draft: ReservationDraft): Estimate {
   const lines: EstimateLine[] = []
 
   if (nights > 0) {
+    // Apply length-of-stay discount to the per-night base price
+    const lengthFactor = nights >= LONG_STAY_MIN_NIGHTS ? LONG_STAY_FACTOR : 1
+    const firstDogRate = Math.round(BASE_PER_NIGHT * lengthFactor)
+    const additionalDogRate = Math.round(BASE_PER_NIGHT * MULTI_DOG_FACTOR * lengthFactor)
+
     lines.push({
       id: 'base',
-      label: 'Standardní pobyt — 1. pes',
-      detail: `${nights} × ${BASE_PER_NIGHT} Kč`,
-      amount: nights * BASE_PER_NIGHT,
+      label: 'Noční pobyt — 1. pes',
+      detail: nights >= LONG_STAY_MIN_NIGHTS
+        ? `${nights} × ${firstDogRate} Kč (sleva za délku pobytu)`
+        : `${nights} × ${BASE_PER_NIGHT} Kč`,
+      amount: nights * firstDogRate,
     })
     if (dogCount > 1) {
       const extra = dogCount - 1
       lines.push({
         id: 'additional-dogs',
-        label: `Další psi (${extra})`,
-        detail: `${extra} × ${nights} × ${ADDITIONAL_DOG_PER_NIGHT} Kč`,
-        amount: extra * nights * ADDITIONAL_DOG_PER_NIGHT,
+        label: `Další ${extra === 1 ? 'pes' : 'psi'} (${extra}×)`,
+        detail: `${extra} × ${nights} × ${additionalDogRate} Kč`,
+        amount: extra * nights * additionalDogRate,
       })
     }
   }
