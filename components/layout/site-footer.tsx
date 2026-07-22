@@ -141,6 +141,14 @@ export async function SiteFooter() {
                 </Link>
               </li>
             ))}
+            <li>
+              <Link
+                href="/admin/login"
+                className="transition-colors hover:text-verde-white/80 text-verde-white/30"
+              >
+                Administrace
+              </Link>
+            </li>
           </ul>
         </div>
       </div>
