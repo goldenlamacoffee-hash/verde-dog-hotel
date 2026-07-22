@@ -17,6 +17,6 @@ interface PillarIconProps {
 }
 
 export function PillarIcon({ name, className, strokeWidth = 1.5 }: PillarIconProps) {
-  const Icon = map[name]
+  const Icon = map[name] ?? PawPrint
   return <Icon className={cn('size-6', className)} strokeWidth={strokeWidth} aria-hidden="true" />
 }
