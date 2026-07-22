@@ -1,11 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export function AdminLoginForm() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -22,8 +20,11 @@ export function AdminLoginForm() {
         setError('Nesprávný e-mail nebo heslo.')
         return
       }
-      router.push('/admin')
-      router.refresh()
+      // Hard navigation so the browser sends a fresh HTTP request carrying
+      // the new Supabase auth cookies. router.push() uses the RSC cache and
+      // can deliver the page before middleware processes the new session,
+      // causing a silent redirect back to /admin/login.
+      window.location.href = '/admin'
     } finally {
       setLoading(false)
     }
