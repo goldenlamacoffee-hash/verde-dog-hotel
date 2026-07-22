@@ -29,15 +29,19 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Protect all /admin routes except /admin/login itself
-  if (
-    request.nextUrl.pathname.startsWith('/admin') &&
-    !request.nextUrl.pathname.startsWith('/admin/login') &&
-    !user
-  ) {
+  const { pathname } = request.nextUrl
+
+  // /admin/login must NEVER be protected — always pass through
+  if (pathname === '/admin/login' || pathname.startsWith('/admin/login/')) {
+    return supabaseResponse
+  }
+
+  // All other /admin/* routes require an authenticated user
+  if (pathname.startsWith('/admin') && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/admin/login'
-    url.searchParams.set('next', request.nextUrl.pathname)
+    url.searchParams.delete('next') // clear any stale param
+    url.searchParams.set('next', pathname)
     return NextResponse.redirect(url)
   }
 
