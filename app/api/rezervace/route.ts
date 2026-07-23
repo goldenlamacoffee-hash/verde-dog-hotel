@@ -187,8 +187,7 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       )
     }
-    console.error('[verde] create_reservation RPC error FULL:', JSON.stringify(rpcError))
-    console.error('[verde] rpc payload:', JSON.stringify({ p_arrival: draft.arrival, p_departure: draft.departure, p_dog_count: draft.dogCount, p_dogs: dogsPayload, p_service_ids: serviceIds, p_consents: consentsPayload }))
+    console.error('[verde] create_reservation RPC error:', msg)
     return NextResponse.json({ error: 'Interní chyba serveru.' }, { status: 500 })
   }
 
