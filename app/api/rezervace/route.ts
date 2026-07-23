@@ -33,14 +33,18 @@ const OwnerSchema = z.object({
   message:        z.string().max(2000).optional().default(''),
 })
 
+// requiredCombined is the combined checkbox from the new 2-checkbox UI.
+// The individual fields (truthfulness, stayConditions, cancellationConditions,
+// personalData) remain required because they are what the RPC stores.
+// The UI sets all four to true when requiredCombined is checked, so they
+// always arrive together. requiredCombined itself is optional to stay
+// backward-compatible with any client that populates only the individual fields.
 const ConsentsSchema = z.object({
-  /** Combined required checkbox sent from the 2-checkbox UI */
-  requiredCombined:         z.literal(true, { error: 'Povinný souhlas' }),
-  /** Individual fields — derived from requiredCombined on the frontend, validated here for audit integrity */
-  truthfulness:             z.literal(true, { error: 'Povinný souhlas' }),
-  stayConditions:           z.literal(true, { error: 'Povinný souhlas' }),
-  cancellationConditions:   z.literal(true, { error: 'Povinný souhlas' }),
-  personalData:             z.literal(true, { error: 'Povinný souhlas' }),
+  requiredCombined:         z.literal(true).optional(),
+  truthfulness:             z.literal(true, { error: 'Pro odeslání žádosti je nutné potvrdit povinný souhlas.' }),
+  stayConditions:           z.literal(true, { error: 'Pro odeslání žádosti je nutné potvrdit povinný souhlas.' }),
+  cancellationConditions:   z.literal(true, { error: 'Pro odeslání žádosti je nutné potvrdit povinný souhlas.' }),
+  personalData:             z.literal(true, { error: 'Pro odeslání žádosti je nutné potvrdit povinný souhlas.' }),
   marketing:                z.boolean().optional().default(false),
 })
 
@@ -48,8 +52,10 @@ const ReservationBodySchema = z.object({
   draft: z.object({
     arrival:          z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Neplatné datum příjezdu'),
     departure:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Neplatné datum odjezdu'),
-    dogCount:         z.number().int().min(1).max(4),
-    dogs:             z.array(DogSchema).min(1).max(4),
+    // Ceiling of 10 is a safety limit; actual availability is enforced by the
+    // server-side RPC capacity engine, not by this static Zod max.
+    dogCount:         z.number().int().min(1).max(10),
+    dogs:             z.array(DogSchema).min(1).max(10),
     // Frontend sends slugs (e.g. 'individual-walk') — resolved to UUIDs below
     selectedServices: z.array(z.string().max(80)).max(20).optional().default([]),
     owner:            OwnerSchema,
@@ -87,9 +93,35 @@ export async function POST(req: NextRequest) {
 
   const parsed = ReservationBodySchema.safeParse(rawBody)
   if (!parsed.success) {
-    const fieldErrors = parsed.error.flatten().fieldErrors
+    const issues = parsed.error.issues
+    // Build a flat path→messages map for the response
+    const fieldErrors: Record<string, string[]> = {}
+    for (const issue of issues) {
+      const key = issue.path.join('.')
+      fieldErrors[key] = [...(fieldErrors[key] ?? []), issue.message]
+    }
+
+    // Derive a human-readable message from the issue paths
+    let humanError = 'Neplatná data formuláře.'
+    const paths = issues.map((i) => i.path.join('.'))
+    const consentKeys = ['truthfulness', 'stayConditions', 'cancellationConditions', 'personalData', 'requiredCombined']
+    const hasConsentError = paths.some((p) => consentKeys.some((k) => p.includes(k)))
+    const hasDogError     = paths.some((p) => p.startsWith('draft.dogs'))
+    const hasServiceError = paths.some((p) => p.includes('selectedServices'))
+
+    if (hasConsentError) {
+      humanError = 'Pro odeslání žádosti je nutné potvrdit povinný souhlas.'
+    } else if (hasDogError) {
+      humanError = 'Zkontrolujte prosím údaje u všech psů.'
+    } else if (hasServiceError) {
+      humanError = 'Jedna z vybraných služeb již není dostupná.'
+    } else if (issues.length > 0) {
+      humanError = issues[0].message
+    }
+
+    console.error('[verde] 422 issues:', JSON.stringify(fieldErrors))
     return NextResponse.json(
-      { error: 'Neplatná data formuláře.', fieldErrors },
+      { error: humanError, fieldErrors },
       { status: 422 }
     )
   }

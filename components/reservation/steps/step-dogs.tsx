@@ -14,7 +14,9 @@ interface Props {
   onBack: () => void
 }
 
-const MAX_DOGS = 4
+// Safety UI ceiling — actual hotel availability is enforced server-side by
+// the create_reservation() RPC capacity engine, not by this static limit.
+const MAX_DOGS = 10
 
 export function StepDogs({
   draft,
@@ -42,7 +44,7 @@ export function StepDogs({
       <div className="mb-8 flex items-center justify-between rounded-xl border border-border bg-secondary/50 px-4 py-3">
         <div>
           <p className="text-sm font-medium text-verde-deep">Počet psů</p>
-          <p className="text-xs text-verde-moss">Ubytujeme až {MAX_DOGS} psy z jedné domácnosti.</p>
+          <p className="text-xs text-verde-moss">Dostupnost závisí na aktuální kapacitě hotelu.</p>
         </div>
         <div className="flex items-center gap-3">
           <button
