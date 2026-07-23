@@ -1,6 +1,6 @@
 'use client'
 
-import { Minus, Plus } from 'lucide-react'
+import { Loader2, Minus, Plus } from 'lucide-react'
 import { Field, TextArea, TextInput } from '../fields'
 import { StepIntro, StepNav } from '../step-nav'
 import type { DogDraft, ReservationDraft } from '@/lib/reservation'
@@ -8,24 +8,34 @@ import type { DogDraft, ReservationDraft } from '@/lib/reservation'
 interface Props {
   draft: ReservationDraft
   errors: Record<string, string>
+  /** Minimum free spots across every night of the selected stay. null = loading/unknown. */
+  spotsLeft: number | null
+  availabilityLoading: boolean
   onChange: (patch: Partial<ReservationDraft>) => void
   onDogCount: (count: number) => void
   onNext: () => void
   onBack: () => void
 }
 
-// Safety UI ceiling — actual hotel availability is enforced server-side by
-// the create_reservation() RPC capacity engine, not by this static limit.
+// Absolute technical safety ceiling — real limit comes from spotsLeft.
 const MAX_DOGS = 10
 
 export function StepDogs({
   draft,
   errors,
+  spotsLeft,
+  availabilityLoading,
   onChange,
   onDogCount,
   onNext,
   onBack,
 }: Props) {
+  // The effective maximum is the server-reported spotsLeft (when known),
+  // capped by the absolute safety ceiling.
+  const effectiveMax =
+    spotsLeft !== null ? Math.min(spotsLeft, MAX_DOGS) : MAX_DOGS
+
+  const fullyBooked = spotsLeft !== null && spotsLeft <= 0
   function updateDog(index: number, patch: Partial<DogDraft>) {
     const dogs = draft.dogs.map((dog, i) =>
       i === index ? { ...dog, ...patch } : dog,
@@ -41,34 +51,68 @@ export function StepDogs({
         description="Čím více víme, tím lépe se o vašeho čtyřnohého kamaráda postaráme."
       />
 
-      <div className="mb-8 flex items-center justify-between rounded-xl border border-border bg-secondary/50 px-4 py-3">
-        <div>
-          <p className="text-sm font-medium text-verde-deep">Počet psů</p>
-          <p className="text-xs text-verde-moss">Dostupnost závisí na aktuální kapacitě hotelu.</p>
+      <div className="mb-8 space-y-3">
+        <div className="flex items-center justify-between rounded-xl border border-border bg-secondary/50 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-verde-deep">Počet psů</p>
+            {/* Availability hint */}
+            {availabilityLoading ? (
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-verde-moss">
+                <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                Zjišťuji dostupnost…
+              </p>
+            ) : spotsLeft !== null ? (
+              <p className="mt-0.5 text-xs text-verde-moss">
+                {spotsLeft === 1
+                  ? 'Pro zvolený termín zbývá poslední volné místo.'
+                  : spotsLeft > 1
+                    ? `Pro zvolený termín jsou k dispozici maximálně ${spotsLeft} místa.`
+                    : null}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-xs text-verde-moss">
+                Dostupnost závisí na aktuální kapacitě hotelu.
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Ubrat psa"
+              disabled={draft.dogCount <= 1}
+              onClick={() => onDogCount(Math.max(1, draft.dogCount - 1))}
+              className="flex size-9 items-center justify-center rounded-full border border-border text-verde-deep transition-colors hover:bg-card disabled:opacity-40"
+            >
+              <Minus className="size-4" aria-hidden="true" />
+            </button>
+            <span className="w-6 text-center font-serif text-lg font-semibold text-verde-deep">
+              {draft.dogCount}
+            </span>
+            <button
+              type="button"
+              aria-label="Přidat psa"
+              disabled={draft.dogCount >= effectiveMax || fullyBooked}
+              onClick={() => onDogCount(Math.min(effectiveMax, draft.dogCount + 1))}
+              className="flex size-9 items-center justify-center rounded-full border border-border text-verde-deep transition-colors hover:bg-card disabled:opacity-40"
+            >
+              <Plus className="size-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            aria-label="Ubrat psa"
-            disabled={draft.dogCount <= 1}
-            onClick={() => onDogCount(Math.max(1, draft.dogCount - 1))}
-            className="flex size-9 items-center justify-center rounded-full border border-border text-verde-deep transition-colors hover:bg-card disabled:opacity-40"
-          >
-            <Minus className="size-4" aria-hidden="true" />
-          </button>
-          <span className="w-6 text-center font-serif text-lg font-semibold text-verde-deep">
-            {draft.dogCount}
-          </span>
-          <button
-            type="button"
-            aria-label="Přidat psa"
-            disabled={draft.dogCount >= MAX_DOGS}
-            onClick={() => onDogCount(Math.min(MAX_DOGS, draft.dogCount + 1))}
-            className="flex size-9 items-center justify-center rounded-full border border-border text-verde-deep transition-colors hover:bg-card disabled:opacity-40"
-          >
-            <Plus className="size-4" aria-hidden="true" />
-          </button>
-        </div>
+
+        {/* Zero-capacity block */}
+        {fullyBooked && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <p className="font-medium">Pro zvolený termín již nemáme dostatečnou kapacitu.</p>
+            <button
+              type="button"
+              onClick={onBack}
+              className="mt-2 text-xs underline underline-offset-2 hover:no-underline"
+            >
+              Vybrat jiný termín
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="space-y-8">
@@ -197,7 +241,7 @@ export function StepDogs({
         ))}
       </div>
 
-      <StepNav onNext={onNext} onBack={onBack} />
+      <StepNav onNext={onNext} onBack={onBack} disabledNext={fullyBooked} />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -30,9 +30,56 @@ export function ReservationFlow() {
   const [confirmedTotal, setConfirmedTotal] = useState<number | null>(null)
   const [confirmedDeposit, setConfirmedDeposit] = useState<number | null>(null)
 
+  // Authoritative availability from the server — fetched after Step 1 dates are set
+  const [spotsLeft, setSpotsLeft] = useState<number | null>(null)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
+
   const estimate = useMemo(() => calculateEstimate(draft), [draft])
   const activeStep = RESERVATION_STEPS[stepIndex]
   const isDone = activeStep.id === 'done'
+
+  // Fetch availability whenever both dates are valid
+  const fetchAvailability = useCallback(async (arrival: string, departure: string) => {
+    if (!arrival || !departure || arrival >= departure) {
+      setSpotsLeft(null)
+      return
+    }
+    setAvailabilityLoading(true)
+    try {
+      const res = await fetch(
+        `/api/availability?arrival=${arrival}&departure=${departure}`,
+      )
+      if (res.ok) {
+        const data = await res.json() as { available: boolean; spotsLeft: number }
+        setSpotsLeft(data.spotsLeft)
+      } else {
+        setSpotsLeft(null)
+      }
+    } catch {
+      setSpotsLeft(null)
+    } finally {
+      setAvailabilityLoading(false)
+    }
+  }, [])
+
+  // Re-fetch when dates change, and clamp dogCount to new spotsLeft
+  useEffect(() => {
+    if (draft.arrival && draft.departure && draft.arrival < draft.departure) {
+      fetchAvailability(draft.arrival, draft.departure).then(() => {
+        // Clamp is handled below via spotsLeft effect
+      })
+    } else {
+      setSpotsLeft(null)
+    }
+  }, [draft.arrival, draft.departure, fetchAvailability])
+
+  // When spotsLeft is known, silently clamp dogCount so no invalid state persists
+  useEffect(() => {
+    if (spotsLeft !== null && spotsLeft > 0 && draft.dogCount > spotsLeft) {
+      setDogCount(spotsLeft)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spotsLeft])
 
   function update(patch: Partial<ReservationDraft>) {
     setDraft((prev) => ({ ...prev, ...patch }))
@@ -89,6 +136,11 @@ export function ReservationFlow() {
       return
     }
     setErrors({})
+
+    // When leaving step 1, fetch (or re-fetch) authoritative availability
+    if (activeStep.id === 'term' && draft.arrival && draft.departure) {
+      fetchAvailability(draft.arrival, draft.departure)
+    }
 
     // On the summary step, persist to DB before advancing
     if (activeStep.id === 'summary') {
@@ -218,6 +270,8 @@ export function ReservationFlow() {
             <StepDogs
               draft={draft}
               errors={errors}
+              spotsLeft={spotsLeft}
+              availabilityLoading={availabilityLoading}
               onChange={update}
               onDogCount={setDogCount}
               onNext={next}
