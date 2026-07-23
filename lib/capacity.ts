@@ -15,19 +15,29 @@ import { createServiceRoleClient } from '@/lib/supabase/service-role'
 
 // ─── Status constants ──────────────────────────────────────────────────────────
 
-/** Statuses that are ALWAYS counted as occupying a spot. */
+/**
+ * Statuses that are ALWAYS counted as occupying a spot.
+ *
+ * Aligned with the create_reservation RPC which counts everything
+ * NOT IN ('cancelled', 'rejected', 'checked_out').
+ * 'inquiry' is the initial status created by the web form and must
+ * be counted so public availability matches the RPC capacity check.
+ */
 export const ALWAYS_ACTIVE_STATUSES = [
+  'inquiry',
+  'request_submitted',
+  'under_review',
   'awaiting_deposit',
   'confirmed',
   'checked_in',
 ] as const
 
-/** Statuses counted only when count_pending_requests setting is true. */
-export const PENDING_STATUSES = [
-  'inquiry',
-  'request_submitted',
-  'under_review',
-] as const
+/**
+ * Additional statuses counted only when count_pending_requests = true.
+ * Currently empty because all pending statuses are already in ALWAYS_ACTIVE_STATUSES.
+ * Kept for backward compatibility.
+ */
+export const PENDING_STATUSES = [] as const
 
 export type ActiveStatus =
   | (typeof ALWAYS_ACTIVE_STATUSES)[number]

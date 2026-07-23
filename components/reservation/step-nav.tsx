@@ -5,9 +5,10 @@ interface StepNavProps {
   onNext: () => void
   onBack?: () => void
   nextLabel?: string
+  disabledNext?: boolean
 }
 
-export function StepNav({ onNext, onBack, nextLabel = 'Pokračovat' }: StepNavProps) {
+export function StepNav({ onNext, onBack, nextLabel = 'Pokračovat', disabledNext = false }: StepNavProps) {
   return (
     <div className="mt-10 flex flex-col-reverse gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
       {onBack ? (
@@ -22,7 +23,7 @@ export function StepNav({ onNext, onBack, nextLabel = 'Pokračovat' }: StepNavPr
       ) : (
         <span className="hidden sm:block" />
       )}
-      <CtaButton type="button" onClick={onNext} size="md">
+      <CtaButton type="button" onClick={onNext} size="md" disabled={disabledNext}>
         {nextLabel}
         <ArrowRight className="size-4" aria-hidden="true" />
       </CtaButton>
