@@ -10,10 +10,16 @@ interface Props {
   draft: ReservationDraft
   estimate: Estimate
   refNumber: string
+  /** Server-confirmed total — overrides client-side estimate when available. */
+  confirmedTotal?: number | null
+  /** Server-confirmed deposit — overrides client-side estimate when available. */
+  confirmedDeposit?: number | null
   onRestart: () => void
 }
 
-export function StepDone({ draft, estimate, refNumber, onRestart }: Props) {
+export function StepDone({ draft, estimate, refNumber, confirmedTotal, confirmedDeposit, onRestart }: Props) {
+  const displayTotal = confirmedTotal ?? estimate.total
+  const displayDeposit = confirmedDeposit ?? estimate.deposit
   return (
     <div className="mx-auto max-w-xl text-center">
       <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-secondary">
@@ -45,8 +51,14 @@ export function StepDone({ draft, estimate, refNumber, onRestart }: Props) {
             <dd className="font-medium text-verde-deep">{estimate.dogCount}</dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-verde-moss">Orientační cena</dt>
-            <dd className="font-medium text-verde-deep">{formatPrice(estimate.total)}</dd>
+            <dt className="text-verde-moss">
+              {confirmedTotal != null ? 'Cena celkem' : 'Orientační cena'}
+            </dt>
+            <dd className="font-medium text-verde-deep">{formatPrice(displayTotal)}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-verde-moss">Rezervační záloha (30 %)</dt>
+            <dd className="font-medium text-verde-green">{formatPrice(displayDeposit)}</dd>
           </div>
         </dl>
       </div>

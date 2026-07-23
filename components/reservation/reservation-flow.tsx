@@ -27,6 +27,8 @@ export function ReservationFlow() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [refNumber, setRefNumber] = useState('')
+  const [confirmedTotal, setConfirmedTotal] = useState<number | null>(null)
+  const [confirmedDeposit, setConfirmedDeposit] = useState<number | null>(null)
 
   const estimate = useMemo(() => calculateEstimate(draft), [draft])
   const activeStep = RESERVATION_STEPS[stepIndex]
@@ -110,7 +112,9 @@ export function ReservationFlow() {
           setSubmitting(false)
           return
         }
-        setRefNumber(json.refNumber)
+        setRefNumber(json.refNumber ?? '')
+        if (json.totalPrice != null) setConfirmedTotal(json.totalPrice)
+        if (json.depositAmount != null) setConfirmedDeposit(json.depositAmount)
       } catch {
         setSubmitError('Nepodařilo se odeslat žádost. Zkuste to prosím znovu.')
         setSubmitting(false)
@@ -135,6 +139,8 @@ export function ReservationFlow() {
     setErrors({})
     setStepIndex(0)
     setRefNumber('')
+    setConfirmedTotal(null)
+    setConfirmedDeposit(null)
     setSubmitError(null)
   }
 
@@ -261,6 +267,8 @@ export function ReservationFlow() {
               draft={draft}
               estimate={estimate}
               refNumber={refNumber}
+              confirmedTotal={confirmedTotal}
+              confirmedDeposit={confirmedDeposit}
               onRestart={restart}
             />
           )}
