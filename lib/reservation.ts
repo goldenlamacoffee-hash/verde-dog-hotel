@@ -32,6 +32,8 @@ export interface ReservationDraft {
     message: string
   }
   consents: {
+    /** Combined required checkbox — maps to truthfulness + stayConditions + cancellationConditions + personalData */
+    requiredCombined: boolean
     truthfulness: boolean
     stayConditions: boolean
     cancellationConditions: boolean
@@ -73,6 +75,7 @@ export function createEmptyDraft(): ReservationDraft {
       message: '',
     },
     consents: {
+      requiredCombined: false,
       truthfulness: false,
       stayConditions: false,
       cancellationConditions: false,

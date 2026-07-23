@@ -34,6 +34,9 @@ const OwnerSchema = z.object({
 })
 
 const ConsentsSchema = z.object({
+  /** Combined required checkbox sent from the 2-checkbox UI */
+  requiredCombined:         z.literal(true, { error: 'Povinný souhlas' }),
+  /** Individual fields — derived from requiredCombined on the frontend, validated here for audit integrity */
   truthfulness:             z.literal(true, { error: 'Povinný souhlas' }),
   stayConditions:           z.literal(true, { error: 'Povinný souhlas' }),
   cancellationConditions:   z.literal(true, { error: 'Povinný souhlas' }),
