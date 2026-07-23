@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Loader2, Pencil } from 'lucide-react'
 import { StepIntro } from '../step-nav'
 import { CtaButton } from '@/components/common/cta-button'
@@ -19,17 +20,45 @@ interface Props {
   onEditStep: (id: StepId) => void
 }
 
-const CONSENTS: {
-  key: keyof ReservationDraft['consents']
-  label: string
-  required: boolean
-}[] = [
-  { key: 'truthfulness', label: 'Potvrzuji, že uvedené údaje jsou pravdivé a úplné.', required: true },
-  { key: 'stayConditions', label: 'Souhlasím s podmínkami pobytu psího hotelu VERDE.', required: true },
-  { key: 'cancellationConditions', label: 'Souhlasím se storno podmínkami a výší zálohy.', required: true },
-  { key: 'personalData', label: 'Souhlasím se zpracováním osobních údajů (GDPR).', required: true },
-  { key: 'marketing', label: 'Chci dostávat novinky a tipy e-mailem (nepovinné).', required: false },
-]
+/** Required combined label — rendered with inline links */
+function RequiredConsentLabel() {
+  return (
+    <span>
+      Souhlasím s{' '}
+      <Link
+        href="/podminky/pobyt"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline underline-offset-2 hover:text-verde-green"
+        onClick={(e) => e.stopPropagation()}
+      >
+        podmínkami pobytu
+      </Link>{' '}
+      a{' '}
+      <Link
+        href="/podminky/storno"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline underline-offset-2 hover:text-verde-green"
+        onClick={(e) => e.stopPropagation()}
+      >
+        storno podmínkami
+      </Link>
+      , potvrzuji správnost uvedených údajů a beru na vědomí{' '}
+      <Link
+        href="/podminky/osobni-udaje"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline underline-offset-2 hover:text-verde-green"
+        onClick={(e) => e.stopPropagation()}
+      >
+        zpracování osobních údajů
+      </Link>{' '}
+      nezbytné pro vyřízení rezervace.
+      <span className="ml-0.5 text-destructive" aria-hidden="true">*</span>
+    </span>
+  )
+}
 
 function EditRow({ title, onEdit, children }: { title: string; onEdit: () => void; children: React.ReactNode }) {
   return (
@@ -61,8 +90,22 @@ export function StepSummary({
   onBack,
   onEditStep,
 }: Props) {
-  function toggleConsent(key: keyof ReservationDraft['consents']) {
-    onChange({ consents: { ...draft.consents, [key]: !draft.consents[key] } })
+  function toggleRequired() {
+    const next = !draft.consents.requiredCombined
+    onChange({
+      consents: {
+        ...draft.consents,
+        requiredCombined:       next,
+        truthfulness:           next,
+        stayConditions:         next,
+        cancellationConditions: next,
+        personalData:           next,
+      },
+    })
+  }
+
+  function toggleMarketing() {
+    onChange({ consents: { ...draft.consents, marketing: !draft.consents.marketing } })
   }
 
   const selectedServiceTitles = draft.selectedServices
@@ -155,30 +198,37 @@ export function StepSummary({
       <fieldset className="mt-8">
         <legend className="mb-3 font-serif text-base font-semibold text-verde-deep">Souhlasy</legend>
         <div className="space-y-3">
-          {CONSENTS.map((consent) => {
-            const error = errors[consent.key]
-            return (
-              <div key={consent.key}>
-                <label className="flex cursor-pointer items-start gap-3 text-sm text-verde-charcoal">
-                  <input
-                    type="checkbox"
-                    checked={draft.consents[consent.key]}
-                    onChange={() => toggleConsent(consent.key)}
-                    className="mt-0.5 size-4 shrink-0 accent-verde-green"
-                  />
-                  <span>
-                    {consent.label}
-                    {consent.required ? <span className="ml-0.5 text-destructive">*</span> : null}
-                  </span>
-                </label>
-                {error ? (
-                  <p className="ml-7 mt-1 text-xs font-medium text-destructive" role="alert">
-                    {error}
-                  </p>
-                ) : null}
-              </div>
-            )
-          })}
+          {/* Checkbox 1 — required combined consent */}
+          <div>
+            <label className="flex cursor-pointer items-start gap-3 text-sm text-verde-charcoal">
+              <input
+                type="checkbox"
+                checked={draft.consents.requiredCombined}
+                onChange={toggleRequired}
+                className="mt-0.5 size-4 shrink-0 accent-verde-green"
+                aria-required="true"
+              />
+              <RequiredConsentLabel />
+            </label>
+            {errors.requiredCombined ? (
+              <p className="ml-7 mt-1 text-xs font-medium text-destructive" role="alert">
+                {errors.requiredCombined}
+              </p>
+            ) : null}
+          </div>
+
+          {/* Checkbox 2 — optional marketing consent */}
+          <div>
+            <label className="flex cursor-pointer items-start gap-3 text-sm text-verde-charcoal">
+              <input
+                type="checkbox"
+                checked={draft.consents.marketing}
+                onChange={toggleMarketing}
+                className="mt-0.5 size-4 shrink-0 accent-verde-green"
+              />
+              <span>Chci dostávat novinky a tipy e-mailem.</span>
+            </label>
+          </div>
         </div>
       </fieldset>
 

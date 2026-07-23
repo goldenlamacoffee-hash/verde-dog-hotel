@@ -74,14 +74,8 @@ export function ReservationFlow() {
         e.phone = 'Zadejte platné telefonní číslo.'
     }
     if (activeStep.id === 'summary') {
-      if (!draft.consents.truthfulness)
-        e.truthfulness = 'Potvrďte pravdivost údajů.'
-      if (!draft.consents.stayConditions)
-        e.stayConditions = 'Potvrďte souhlas s podmínkami pobytu.'
-      if (!draft.consents.cancellationConditions)
-        e.cancellationConditions = 'Potvrďte souhlas se storno podmínkami.'
-      if (!draft.consents.personalData)
-        e.personalData = 'Potvrďte souhlas se zpracováním údajů.'
+      if (!draft.consents.requiredCombined)
+        e.requiredCombined = 'Potvrďte prosím povinný souhlas pro odeslání rezervace.'
     }
     setErrors(e)
     return Object.keys(e).length === 0
