@@ -129,6 +129,8 @@ export interface EmailLog {
 export const BOOKING_RULES = {
   minNights: 1,
   maxNights: 30,
-  maxDogs: 4,
+  // UI safety ceiling — actual hotel availability is enforced server-side
+  // by the create_reservation() RPC capacity engine.
+  maxDogs: 10,
   depositRate: 0.3,
 } as const
