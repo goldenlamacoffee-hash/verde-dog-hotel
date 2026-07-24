@@ -13,6 +13,12 @@ interface Props {
 }
 
 export function StepTerm({ draft, errors, estimate, onChange, onNext }: Props) {
+  // Continue is only enabled when both dates are present and departure > arrival
+  const canContinue =
+    Boolean(draft.arrival) &&
+    Boolean(draft.departure) &&
+    draft.departure > draft.arrival
+
   return (
     <div>
       <StepIntro
@@ -21,7 +27,7 @@ export function StepTerm({ draft, errors, estimate, onChange, onNext }: Props) {
         description="Vyberte termín příjezdu a odjezdu. Ubytování počítáme podle počtu nocí."
       />
 
-      {/* Error messages from validation */}
+      {/* Validation errors from server-side step validation */}
       {(errors.arrival || errors.departure) ? (
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-sm text-destructive" role="alert">
           {errors.arrival && <p>{errors.arrival}</p>}
@@ -29,28 +35,9 @@ export function StepTerm({ draft, errors, estimate, onChange, onNext }: Props) {
         </div>
       ) : null}
 
-      {/* Hidden accessible inputs so the browser form validation and
-          autofill still work; the calendar drives their values. */}
-      <input
-        id="arrival"
-        type="date"
-        name="arrival"
-        value={draft.arrival}
-        readOnly
-        aria-hidden="true"
-        tabIndex={-1}
-        className="sr-only"
-      />
-      <input
-        id="departure"
-        type="date"
-        name="departure"
-        value={draft.departure}
-        readOnly
-        aria-hidden="true"
-        tabIndex={-1}
-        className="sr-only"
-      />
+      {/* Hidden accessible inputs — the calendar drives their values */}
+      <input id="arrival"   type="date" name="arrival"   value={draft.arrival}   readOnly aria-hidden="true" tabIndex={-1} className="sr-only" />
+      <input id="departure" type="date" name="departure" value={draft.departure} readOnly aria-hidden="true" tabIndex={-1} className="sr-only" />
 
       <AvailabilityCalendar
         arrival={draft.arrival}
@@ -60,7 +47,7 @@ export function StepTerm({ draft, errors, estimate, onChange, onNext }: Props) {
         onRangeChange={(arrival, departure) => onChange({ arrival, departure })}
       />
 
-      <StepNav onNext={onNext} />
+      <StepNav onNext={onNext} disabledNext={!canContinue} />
     </div>
   )
 }
