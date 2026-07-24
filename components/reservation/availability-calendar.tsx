@@ -6,12 +6,16 @@
  * Desktop: two calendars side by side (current + next month), shared navigation.
  * Mobile: two calendars stacked vertically.
  *
- * Availability colour rules (dots + muted text only — no aggressive fills):
- *   full     → muted text, small red dot, disabled as arrival
- *   scarce   → normal text, orange dot
- *   partial  → normal text, amber dot
- *   free     → normal text, green dot (subtle)
- *   unknown  → neutral
+ * Availability is communicated via:
+ *   1. Full-cell colored backgrounds (CMS-configurable)
+ *   2. Non-color secondary indicator text ( free count / × )
+ *   3. aria-label with Czech plain-language description
+ *
+ * Availability status rules:
+ *   full    → CMS fullBackground/fullText, "×" indicator, disabled as arrival
+ *   scarce  → CMS lastBackground/lastText,  "1" indicator
+ *   partial → CMS limitedBackground/limitedText, count indicator
+ *   free    → CMS availableBackground/availableText, no secondary indicator
  *
  * Selection rules (identical to create_reservation RPC):
  *   - Arrival is an occupied night.
@@ -26,6 +30,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, CalendarDays } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { CalendarAppearance } from '@/lib/types'
+import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +50,8 @@ export interface AvailabilityCalendarProps {
   onArrivalChange: (date: string) => void
   onDepartureChange: (date: string) => void
   onRangeChange?: (arrival: string, departure: string) => void
+  /** CMS-configured colors — falls back to VERDE defaults when omitted. */
+  appearance?: CalendarAppearance
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -71,7 +79,6 @@ function toISO(year: number, month: number, day: number): string {
 }
 
 function dayOfWeek(iso: string): number {
-  // Returns 0=Mon … 6=Sun
   const d = new Date(iso + 'T00:00:00')
   return (d.getDay() + 6) % 7
 }
@@ -125,14 +132,31 @@ function findBlockingNight(from: string, to: string, occ: OccupancyMap): string 
   return null
 }
 
-function getDayAriaLabel(dateStr: string, occ: DayOccupancy | undefined, isValidDep: boolean): string {
+/**
+ * Full accessible aria-label for a day button.
+ * Spec examples:
+ *   "25. července 2026, volno, 4 místa"
+ *   "26. července 2026, zbývají 2 místa"
+ *   "27. července 2026, poslední volné místo"
+ *   "28. července 2026, plně obsazeno"
+ */
+function getDayAriaLabel(
+  dateStr: string,
+  occ: DayOccupancy | undefined,
+  isValidDep: boolean,
+  isArrival: boolean,
+  isDeparture: boolean,
+): string {
   const d = new Date(dateStr + 'T00:00:00')
-  const label = `${d.getDate()}. ${MONTH_NAMES_GENITIVE_CS[d.getMonth()]}`
-  if (isValidDep) return `${label} – plně obsazeno, lze zvolit jako odjezd`
-  if (!occ) return label
-  if (occ.free <= 0) return `${label} – plně obsazeno`
-  if (occ.free === 1) return `${label} – poslední místo`
-  return `${label} – volno (${occ.free} míst)`
+  const base = `${d.getDate()}. ${MONTH_NAMES_GENITIVE_CS[d.getMonth()]} ${d.getFullYear()}`
+  if (isArrival) return `${base}, datum příjezdu`
+  if (isDeparture) return `${base}, datum odjezdu`
+  if (isValidDep) return `${base}, plně obsazeno – lze zvolit jako odjezd`
+  if (!occ) return base
+  if (occ.free <= 0) return `${base}, plně obsazeno`
+  if (occ.free === 1) return `${base}, poslední volné místo`
+  if (occ.free <= occ.maxDogs / 2) return `${base}, zbývají ${occ.free} místa`
+  return `${base}, volno, ${occ.free} míst`
 }
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
@@ -199,6 +223,7 @@ interface MonthGridProps {
   selectingDeparture: boolean
   occupancy: OccupancyMap
   blockingNight: string | null
+  appearance: CalendarAppearance
   onDayClick: (dateStr: string) => void
   onDayHover: (dateStr: string | null) => void
 }
@@ -207,6 +232,7 @@ function MonthGrid({
   year, month, today,
   arrival, departure, hoverDate,
   selectingDeparture, occupancy, blockingNight,
+  appearance,
   onDayClick, onDayHover,
 }: MonthGridProps) {
   const daysInMonth = new Date(year, month, 0).getDate()
@@ -225,7 +251,7 @@ function MonthGrid({
       </div>
 
       {/* Day cells */}
-      <div className="grid grid-cols-7">
+      <div className="grid grid-cols-7 gap-y-0.5">
         {/* Leading blanks */}
         {Array.from({ length: firstWd }).map((_, i) => (
           <div key={`b-${i}`} />
@@ -241,6 +267,7 @@ function MonthGrid({
           const isDeparture  = dateStr === departure
           const isFull       = status === 'full'
 
+          // A fully-booked date is selectable as departure only
           const isValidDeparture =
             selectingDeparture && dateStr > arrival && isFull
 
@@ -256,24 +283,84 @@ function MonthGrid({
           const isRangeStart = isArrival && rangeEnd !== null && rangeEnd > arrival
           const isRangeEnd   = (isDeparture || isHoverDep) && arrival !== '' && rangeEnd !== null && rangeEnd > arrival
 
-          // Is this a blocking night within the selected range?
-          const isBlocked = Boolean(
-            blockingNight && isInRange && occ?.free <= 0
-          )
+          const isBlocked = Boolean(blockingNight && isInRange && occ?.free <= 0)
 
-          const ariaLabel = getDayAriaLabel(dateStr, occ, isValidDeparture)
+          const ariaLabel = getDayAriaLabel(dateStr, occ, isValidDeparture, isArrival, isDeparture)
+
+          // ── Determine cell colors ──
+          // Priority: selected > range > status
+          let cellBg: string
+          let cellText: string
+          let cellBorder: string
+
+          if (isArrival || isDeparture || isHoverDep) {
+            cellBg     = appearance.selectedBackground
+            cellText   = appearance.selectedText
+            cellBorder = 'transparent'
+          } else if (isInRange) {
+            cellBg     = isBlocked ? '#FADDDD' : appearance.rangeBackground
+            cellText   = isBlocked ? '#991B1B' : appearance.availableText
+            cellBorder = 'transparent'
+          } else if (isPast) {
+            cellBg     = 'transparent'
+            cellText   = ''    // handled by Tailwind class
+            cellBorder = 'transparent'
+          } else {
+            switch (status) {
+              case 'full':
+                cellBg     = appearance.fullBackground
+                cellText   = appearance.fullText
+                cellBorder = appearance.fullText + '33' // 20% alpha border
+                break
+              case 'scarce':
+                cellBg     = appearance.lastBackground
+                cellText   = appearance.lastText
+                cellBorder = appearance.lastText + '33'
+                break
+              case 'partial':
+                cellBg     = appearance.limitedBackground
+                cellText   = appearance.limitedText
+                cellBorder = appearance.limitedText + '33'
+                break
+              case 'free':
+                cellBg     = appearance.availableBackground
+                cellText   = appearance.availableText
+                cellBorder = appearance.availableText + '22'
+                break
+              default:
+                // unknown — no data yet
+                cellBg     = 'transparent'
+                cellText   = ''
+                cellBorder = 'transparent'
+            }
+          }
+
+          // ── Non-color secondary indicator ──
+          // Shown below the day number when the cell is not selected/range
+          let indicator: string | null = null
+          if (!isPast && !isArrival && !isDeparture && !isInRange && !isHoverDep) {
+            if (status === 'full') {
+              indicator = '×'
+            } else if (status === 'scarce') {
+              indicator = '1'
+            } else if (status === 'partial' && occ) {
+              indicator = String(occ.free)
+            }
+            // 'free' has no secondary indicator — it's the default state
+          }
+
+          // Today's cell gets a colored outline ring
+          const todayRing = isToday && !isArrival && !isDeparture
 
           return (
             <div
               key={dateStr}
               className={cn(
-                'relative',
-                // Range background strip — sits behind the cells
-                isInRange && !isArrival && !isDeparture && 'bg-emerald-50 dark:bg-emerald-950/20',
-                isInRange && isBlocked && 'bg-red-50 dark:bg-red-950/20',
-                // Rounded at range start/end
-                isRangeStart && 'rounded-l-full',
-                isRangeEnd   && 'rounded-r-full',
+                'px-px',
+                // Range strip — rounded at ends
+                isInRange && 'px-0',
+                isRangeStart && 'rounded-l-lg',
+                isRangeEnd   && 'rounded-r-lg',
               )}
             >
               <button
@@ -285,67 +372,114 @@ function MonthGrid({
                 onMouseEnter={() => !isPast && onDayHover(dateStr)}
                 onMouseLeave={() => onDayHover(null)}
                 onClick={() => onDayClick(dateStr)}
+                style={
+                  cellText
+                    ? {
+                        backgroundColor: cellBg,
+                        color:           cellText,
+                        borderColor:     todayRing ? appearance.todayBorder : cellBorder,
+                      }
+                    : undefined
+                }
                 className={cn(
-                  // Base: compact square cell, centred
-                  'relative mx-auto flex h-9 w-9 items-center justify-center rounded-full text-[13px] font-medium transition-colors duration-100',
+                  // Base: compact rounded cell — 40×40px touch target, flex column
+                  'relative mx-auto flex w-full flex-col items-center justify-center rounded-lg',
+                  'min-h-[40px] min-w-[36px]',
+                  'text-[12px] font-semibold leading-none transition-colors duration-100',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-verde-green focus-visible:ring-offset-1',
+                  // Border
+                  'border',
+                  todayRing ? 'border-2' : 'border',
 
-                  // Past
-                  isPast && 'cursor-not-allowed text-verde-stone/40 line-through',
+                  // Past dates — no background color, just muted text
+                  isPast && 'cursor-not-allowed border-transparent text-verde-stone/30 line-through',
 
-                  // Today ring (only when not selected)
-                  isToday && !isArrival && !isDeparture &&
-                    'ring-1 ring-verde-green/60',
+                  // Unknown state (no occupancy data yet) — neutral
+                  !isPast && status === 'unknown' && 'border-transparent bg-card/50 text-verde-stone/50',
 
-                  // Normal availability text/dot colours (future, not selected)
-                  !isPast && !isArrival && !isDeparture && !isHoverDep && (() => {
-                    switch (status) {
-                      case 'full':
-                        return isValidDeparture
-                          ? 'text-verde-stone/60 hover:bg-verde-ivory dark:hover:bg-verde-charcoal/40'
-                          : 'cursor-not-allowed text-verde-stone/40'
-                      case 'scarce':
-                        return 'text-verde-deep hover:bg-verde-ivory dark:text-verde-ivory dark:hover:bg-verde-charcoal/40'
-                      case 'partial':
-                        return 'text-verde-deep hover:bg-verde-ivory dark:text-verde-ivory dark:hover:bg-verde-charcoal/40'
-                      case 'free':
-                        return 'text-verde-deep hover:bg-verde-ivory dark:text-verde-ivory dark:hover:bg-verde-charcoal/40'
-                      default:
-                        return 'text-verde-deep hover:bg-verde-ivory dark:text-verde-ivory dark:hover:bg-verde-charcoal/40'
-                    }
-                  })(),
+                  // Full as valid departure — slightly desaturated, hoverable
+                  isValidDeparture && !isDisabled && 'cursor-pointer hover:opacity-80',
 
-                  // Hover departure preview
-                  isHoverDep &&
-                    'bg-verde-deep/70 text-white',
+                  // Disabled full (not valid departure) — reduced opacity + no pointer
+                  isFull && isDisabled && 'cursor-not-allowed opacity-70',
 
-                  // Selected arrival / departure — solid dark verde circle
-                  (isArrival || isDeparture) &&
-                    'bg-verde-deep text-white shadow-sm z-10',
+                  // Hover states for selectable cells
+                  !isPast && !isDisabled && !isArrival && !isDeparture && 'hover:opacity-90',
                 )}
               >
-                {day}
-                {/* Availability dot */}
-                {!isPast && !isArrival && !isDeparture && (
+                {/* Day number */}
+                <span className="block leading-tight">{day}</span>
+
+                {/* Non-color secondary indicator */}
+                {indicator !== null && (
                   <span
                     aria-hidden="true"
                     className={cn(
-                      'absolute bottom-0.5 left-1/2 -translate-x-1/2 rounded-full',
-                      // smaller dot, more subtle
-                      'size-[3px]',
-                      status === 'full'    && 'bg-red-400',
-                      status === 'scarce'  && 'bg-orange-400',
-                      status === 'partial' && 'bg-amber-400',
-                      status === 'free'    && 'bg-emerald-400',
-                      status === 'unknown' && 'opacity-0',
+                      'block text-[9px] font-bold leading-none',
+                      indicator === '×' ? 'mt-px' : 'mt-0.5',
                     )}
-                  />
+                  >
+                    {indicator}
+                  </span>
                 )}
               </button>
             </div>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ─── Legend ───────────────────────────────────────────────────────────────────
+
+function CalendarLegend({ appearance }: { appearance: CalendarAppearance }) {
+  const items = [
+    {
+      label: 'Volno',
+      bg: appearance.availableBackground,
+      text: appearance.availableText,
+      indicator: null,
+    },
+    {
+      label: 'Zbývají místa',
+      bg: appearance.limitedBackground,
+      text: appearance.limitedText,
+      indicator: '2',
+    },
+    {
+      label: 'Poslední místo',
+      bg: appearance.lastBackground,
+      text: appearance.lastText,
+      indicator: '1',
+    },
+    {
+      label: 'Plně obsazeno',
+      bg: appearance.fullBackground,
+      text: appearance.fullText,
+      indicator: '×',
+    },
+  ]
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1" role="list" aria-label="Legenda dostupnosti">
+      {items.map((item) => (
+        <div key={item.label} className="flex items-center gap-2" role="listitem">
+          <span
+            aria-hidden="true"
+            className="inline-flex h-8 w-8 flex-col items-center justify-center rounded-lg border text-[10px] font-bold leading-none"
+            style={{
+              backgroundColor: item.bg,
+              color: item.text,
+              borderColor: item.text + '33',
+            }}
+          >
+            <span>24</span>
+            {item.indicator && <span className="text-[8px]">{item.indicator}</span>}
+          </span>
+          <span className="text-xs text-verde-stone">{item.label}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -358,26 +492,25 @@ export function AvailabilityCalendar({
   onArrivalChange,
   onDepartureChange,
   onRangeChange,
+  appearance: appearanceProp,
 }: AvailabilityCalendarProps) {
+  const appearance = appearanceProp ?? CALENDAR_APPEARANCE_DEFAULTS
+
   const today = todayISO()
   const todayYear  = parseInt(today.slice(0, 4))
   const todayMonth = parseInt(today.slice(5, 7))
 
-  // Left-panel month (right panel is always +1)
   const initDate = arrival || today
   const [leftYear,  setLeftYear]  = useState(() => parseInt(initDate.slice(0, 4)))
   const [leftMonth, setLeftMonth] = useState(() => parseInt(initDate.slice(5, 7)))
 
   const right = addMonths(leftYear, leftMonth, 1)
 
-  // Merged occupancy map from both panels
   const [occupancy, setOccupancy] = useState<OccupancyMap>({})
   const [loading, setLoading]     = useState(false)
 
-  // Which field the user is actively selecting: 'arrival' | 'departure'
   const selectingDeparture = Boolean(arrival && !departure)
 
-  // active field for visual highlight on the date fields above
   const [activeField, setActiveField] = useState<'arrival' | 'departure'>(
     () => (arrival && !departure ? 'departure' : 'arrival')
   )
@@ -386,7 +519,6 @@ export function AvailabilityCalendar({
   const isMounted = useRef(true)
   useEffect(() => { isMounted.current = true; return () => { isMounted.current = false } }, [])
 
-  // Fetch left + right months when left changes
   useEffect(() => {
     setLoading(true)
     const r = addMonths(leftYear, leftMonth, 1)
@@ -398,18 +530,15 @@ export function AvailabilityCalendar({
       setOccupancy({ ...m1, ...m2 })
       setLoading(false)
     })
-    // Pre-fetch month after right for smooth forward navigation
     const rr = addMonths(leftYear, leftMonth, 2)
     fetchMonth(rr.year, rr.month)
   }, [leftYear, leftMonth])
 
-  // Keep activeField in sync when arrival/departure change externally
   useEffect(() => {
     if (!arrival) setActiveField('arrival')
     else if (!departure) setActiveField('departure')
   }, [arrival, departure])
 
-  // Navigation
   function prevMonth() {
     const prev = addMonths(leftYear, leftMonth, -1)
     setLeftYear(prev.year)
@@ -423,12 +552,10 @@ export function AvailabilityCalendar({
   const isPrevDisabled =
     leftYear < todayYear || (leftYear === todayYear && leftMonth <= todayMonth)
 
-  // Blocking night check
   const blockingNight = (arrival && departure && arrival < departure)
     ? findBlockingNight(arrival, departure, occupancy)
     : null
 
-  // Day click handler — shared by both grids
   const handleDayClick = useCallback((dateStr: string) => {
     if (dateStr < today) return
     const status  = getDayStatus(occupancy[dateStr])
@@ -440,9 +567,7 @@ export function AvailabilityCalendar({
       onDepartureChange('')
       setActiveField('departure')
     } else {
-      // Selecting departure
       if (dateStr <= arrival) {
-        // Reset: treat as new arrival
         if (!isFull) {
           onArrivalChange(dateStr)
           onDepartureChange('')
@@ -450,15 +575,13 @@ export function AvailabilityCalendar({
         }
         return
       }
-      // departure >= arrival: allowed even if full (departure night not occupied)
       const blocking = findBlockingNight(arrival, dateStr, occupancy)
       onDepartureChange(dateStr)
       if (blocking === null && onRangeChange) onRangeChange(arrival, dateStr)
-      setActiveField('arrival') // Reset to arrival for next cycle
+      setActiveField('arrival')
     }
   }, [activeField, arrival, departure, occupancy, onArrivalChange, onDepartureChange, onRangeChange, today])
 
-  // Date field click — lets user re-select by clicking the field
   function handleFieldClick(field: 'arrival' | 'departure') {
     setActiveField(field)
     if (field === 'arrival') {
@@ -470,6 +593,19 @@ export function AvailabilityCalendar({
   }
 
   const nights = arrival && departure ? nightsBetween(arrival, departure) : 0
+
+  const sharedGridProps = {
+    today,
+    arrival,
+    departure,
+    hoverDate,
+    selectingDeparture,
+    occupancy,
+    blockingNight,
+    appearance,
+    onDayClick: handleDayClick,
+    onDayHover: setHoverDate,
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -494,7 +630,6 @@ export function AvailabilityCalendar({
 
       {/* ── Range / hint strip ── */}
       <div className="flex min-h-[28px] items-center justify-between gap-2 px-0.5">
-        {/* Left: status message */}
         {blockingNight ? (
           <p className="text-xs font-medium text-destructive" role="alert">
             Zvolený pobyt není dostupný po celý termín.
@@ -510,14 +645,13 @@ export function AvailabilityCalendar({
           <p className="text-xs text-verde-stone">Nyní vyberte datum odjezdu.</p>
         )}
 
-        {/* Right: loading indicator */}
         {loading && (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-verde-stone" aria-label="Načítám obsazenost" />
         )}
       </div>
 
       {/* ── Calendar panels ── */}
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div className="rounded-xl border border-border bg-card p-3 sm:p-4">
         {/* Shared navigation header */}
         <div className="mb-3 flex items-center justify-between">
           <button
@@ -537,7 +671,7 @@ export function AvailabilityCalendar({
 
           <div className="flex flex-1 justify-around px-2 text-sm font-semibold text-verde-deep">
             <span>{MONTH_NAMES_CS[leftMonth - 1]} {leftYear}</span>
-            <span>{MONTH_NAMES_CS[right.month - 1]} {right.year}</span>
+            <span className="hidden sm:inline">{MONTH_NAMES_CS[right.month - 1]} {right.year}</span>
           </div>
 
           <button
@@ -550,56 +684,23 @@ export function AvailabilityCalendar({
           </button>
         </div>
 
-        {/* Two grids */}
-        <div className="flex gap-6">
-          <MonthGrid
-            year={leftYear} month={leftMonth}
-            today={today}
-            arrival={arrival} departure={departure}
-            hoverDate={hoverDate}
-            selectingDeparture={selectingDeparture}
-            occupancy={occupancy}
-            blockingNight={blockingNight}
-            onDayClick={handleDayClick}
-            onDayHover={setHoverDate}
-          />
-          {/* Divider */}
-          <div className="hidden w-px shrink-0 bg-border sm:block" aria-hidden="true" />
-          <MonthGrid
-            year={right.year} month={right.month}
-            today={today}
-            arrival={arrival} departure={departure}
-            hoverDate={hoverDate}
-            selectingDeparture={selectingDeparture}
-            occupancy={occupancy}
-            blockingNight={blockingNight}
-            onDayClick={handleDayClick}
-            onDayHover={setHoverDate}
-          />
+        {/* Two grids side by side (mobile: stacked) */}
+        <div className="flex flex-col gap-6 sm:flex-row sm:gap-4">
+          <MonthGrid year={leftYear} month={leftMonth} {...sharedGridProps} />
+          {/* Mobile: show right month label since header only shows left */}
+          <div className="sm:hidden">
+            <p className="mb-2 text-center text-sm font-semibold text-verde-deep">
+              {MONTH_NAMES_CS[right.month - 1]} {right.year}
+            </p>
+          </div>
+          <div className="hidden w-px self-stretch bg-border sm:block" aria-hidden="true" />
+          <MonthGrid year={right.year} month={right.month} {...sharedGridProps} />
         </div>
       </div>
 
       {/* ── Legend ── */}
-      <div
-        className="flex flex-wrap items-center gap-x-4 gap-y-1 px-0.5"
-        aria-label="Legenda dostupnosti"
-      >
-        <LegendItem color="bg-emerald-400" label="Volno" />
-        <LegendItem color="bg-amber-400"   label="Zbývají místa" />
-        <LegendItem color="bg-orange-400"  label="Poslední místo" />
-        <LegendItem color="bg-red-400"     label="Plně obsazeno" />
-      </div>
-    </div>
-  )
-}
+      <CalendarLegend appearance={appearance} />
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function LegendItem({ color, label }: { color: string; label: string }) {
-  return (
-    <div className="flex items-center gap-1.5 text-[11px] text-verde-stone">
-      <span className={cn('size-2 rounded-full shrink-0', color)} aria-hidden="true" />
-      {label}
     </div>
   )
 }

@@ -92,9 +92,12 @@ export async function updateSiteSetting(key: string, value: object) {
   revalidatePath('/admin/obsah')
   revalidatePath('/', 'layout')
 
-  // Revalidate specific public pages that render contact settings
+  // Revalidate specific public pages that render this setting
   if (key === 'contact') {
     revalidatePath('/kontakt')
+  }
+  if (key === 'availabilityCalendarAppearance') {
+    revalidatePath('/rezervace')
   }
 }
 

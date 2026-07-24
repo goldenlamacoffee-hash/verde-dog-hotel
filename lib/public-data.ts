@@ -3,7 +3,8 @@
  * All functions are safe to call from Server Components.
  */
 
-import type { ContactSettingsValue, FaqItem, PriceItem, Testimonial } from '@/lib/types'
+import type { CalendarAppearance, ContactSettingsValue, FaqItem, PriceItem, Testimonial } from '@/lib/types'
+import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
 import { faqItems as staticFaq } from '@/content/faq'
 import { priceItems as staticPrices } from '@/content/services'
 import { testimonials as staticTestimonials } from '@/content/home'
@@ -79,6 +80,30 @@ export async function getPublicSiteSetting<T extends Record<string, unknown>>(
     // fall through
   }
   return null
+}
+
+// ─── Calendar appearance ──────────────────────────────────────────────────────
+
+/** Validate a single value is a CSS hex color. */
+function isValidHex(v: unknown): v is string {
+  return typeof v === 'string' && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(v)
+}
+
+/**
+ * Fetch calendar color settings from site_settings, validating each value.
+ * Falls back to VERDE defaults for any missing or invalid keys.
+ */
+export async function getPublicCalendarAppearance(): Promise<CalendarAppearance> {
+  const db = await getPublicSiteSetting<Record<string, unknown>>('availabilityCalendarAppearance')
+  if (!db) return { ...CALENDAR_APPEARANCE_DEFAULTS }
+
+  const result = { ...CALENDAR_APPEARANCE_DEFAULTS }
+  for (const key of Object.keys(CALENDAR_APPEARANCE_DEFAULTS) as (keyof CalendarAppearance)[]) {
+    if (isValidHex(db[key])) {
+      result[key] = db[key] as string
+    }
+  }
+  return result
 }
 
 // ─── Contact settings ─────────────────────────────────────────────────────────

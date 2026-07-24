@@ -18,15 +18,18 @@ import { StepOwner } from './steps/step-owner'
 import { StepSummary } from './steps/step-summary'
 import { StepDone } from './steps/step-done'
 import { EstimatePanel } from './estimate-panel'
+import type { CalendarAppearance } from '@/lib/types'
 
 type Errors = Record<string, string>
 
 interface ReservationFlowProps {
   /** VERDE contact email from CMS — passed to StepDone confirmation message. */
   contactEmail?: string | null
+  /** CMS-configured calendar colors fetched server-side. */
+  calendarAppearance?: CalendarAppearance
 }
 
-export function ReservationFlow({ contactEmail }: ReservationFlowProps) {
+export function ReservationFlow({ contactEmail, calendarAppearance }: ReservationFlowProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   // Track the last-seen `new` token so we only reset once per unique value.
@@ -294,6 +297,7 @@ export function ReservationFlow({ contactEmail }: ReservationFlowProps) {
               estimate={estimate}
               onChange={update}
               onNext={next}
+              calendarAppearance={calendarAppearance}
             />
           )}
           {activeStep.id === 'dogs' && (
