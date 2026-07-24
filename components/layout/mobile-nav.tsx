@@ -10,12 +10,18 @@ import { Logo } from '@/components/brand/logo'
 import { CtaLink } from '@/components/common/cta-button'
 
 interface NavItem { label: string; href: string }
-interface Props { solid: boolean; navItems?: NavItem[] }
+interface Props {
+  solid: boolean
+  navItems?: NavItem[]
+  /** Current pathname — passed from SiteHeader to avoid duplicate usePathname calls */
+  pathname?: string
+}
 
-export function MobileNav({ solid, navItems }: Props) {
+export function MobileNav({ solid, navItems, pathname: pathnameProp }: Props) {
   const navigation = navItems ?? staticNavigation
   const [open, setOpen] = useState(false)
-  const pathname = usePathname()
+  const routerPathname = usePathname()
+  const pathname = pathnameProp ?? routerPathname
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
 
@@ -119,7 +125,11 @@ export function MobileNav({ solid, navItems }: Props) {
             </nav>
 
             <div className="border-t border-border p-4">
-              <CtaLink href="/rezervace" size="lg" className="w-full">
+              <CtaLink
+                href={pathname.startsWith('/rezervace') ? `/rezervace?new=${Date.now()}` : '/rezervace'}
+                size="lg"
+                className="w-full"
+              >
                 Rezervovat pobyt
               </CtaLink>
               <a

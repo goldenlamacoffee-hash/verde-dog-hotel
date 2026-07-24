@@ -9,6 +9,19 @@ import { Logo } from '@/components/brand/logo'
 import { CtaLink } from '@/components/common/cta-button'
 import { MobileNav } from './mobile-nav'
 
+/**
+ * Returns a fresh reservation URL.
+ * When already on /rezervace a ?new=<token> param forces the router to
+ * treat it as a new navigation and ReservationFlow detects the changed
+ * param to call restart(). From any other page it is a plain navigation.
+ */
+function reservationHref(pathname: string): string {
+  if (pathname.startsWith('/rezervace')) {
+    return `/rezervace?new=${Date.now()}`
+  }
+  return '/rezervace'
+}
+
 interface NavItem { label: string; href: string }
 
 interface Props {
@@ -90,14 +103,14 @@ export function SiteHeader({ navItems, ctaLabel, darkLogoSrc, lightLogoSrc }: Pr
 
         <div className="flex items-center gap-2">
           <CtaLink
-            href="/rezervace"
+            href={reservationHref(pathname)}
             size="md"
             variant={solid ? 'primary' : 'light'}
             className="hidden sm:inline-flex"
           >
             {ctaLabel ?? 'Rezervovat pobyt'}
           </CtaLink>
-          <MobileNav solid={solid} navItems={navigation} />
+          <MobileNav solid={solid} navItems={navigation} pathname={pathname} />
         </div>
       </div>
     </header>

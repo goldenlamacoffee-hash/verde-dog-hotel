@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -20,7 +21,17 @@ import { EstimatePanel } from './estimate-panel'
 
 type Errors = Record<string, string>
 
-export function ReservationFlow() {
+interface ReservationFlowProps {
+  /** VERDE contact email from CMS — passed to StepDone confirmation message. */
+  contactEmail?: string | null
+}
+
+export function ReservationFlow({ contactEmail }: ReservationFlowProps) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  // Track the last-seen `new` token so we only reset once per unique value.
+  const lastNewToken = useRef<string | null>(null)
+
   const [stepIndex, setStepIndex] = useState(0)
   const [draft, setDraft] = useState<ReservationDraft>(createEmptyDraft)
   const [errors, setErrors] = useState<Errors>({})
@@ -180,7 +191,7 @@ export function ReservationFlow() {
     setStepIndex((i) => Math.max(i - 1, 0))
   }
 
-  function restart() {
+  const restart = useCallback(() => {
     setDraft(createEmptyDraft())
     setErrors({})
     setStepIndex(0)
@@ -194,7 +205,20 @@ export function ReservationFlow() {
     document
       .getElementById('reservation-top')
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  }, [])
+
+  // Watch the `?new=<token>` search param injected by the header/mobile CTAs.
+  // A changed token means the user explicitly requested a fresh reservation
+  // (even when already on /rezervace). We reset once per unique token value,
+  // then clean the URL so the param never persists in history.
+  useEffect(() => {
+    const token = searchParams.get('new')
+    if (token && token !== lastNewToken.current) {
+      lastNewToken.current = token
+      restart()
+      router.replace('/rezervace')
+    }
+  }, [searchParams, restart, router])
 
   const progressSteps = RESERVATION_STEPS.slice(0, 5)
 
@@ -323,6 +347,7 @@ export function ReservationFlow() {
               refNumber={refNumber}
               confirmedTotal={confirmedTotal}
               confirmedDeposit={confirmedDeposit}
+              contactEmail={contactEmail}
               onRestart={restart}
             />
           )}
