@@ -188,6 +188,12 @@ export function ReservationFlow() {
     setConfirmedTotal(null)
     setConfirmedDeposit(null)
     setSubmitError(null)
+    setSubmitting(false)
+    setSpotsLeft(null)
+    setAvailabilityLoading(false)
+    document
+      .getElementById('reservation-top')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const progressSteps = RESERVATION_STEPS.slice(0, 5)
