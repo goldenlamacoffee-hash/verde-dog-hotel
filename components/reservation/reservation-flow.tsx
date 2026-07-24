@@ -20,7 +20,12 @@ import { EstimatePanel } from './estimate-panel'
 
 type Errors = Record<string, string>
 
-export function ReservationFlow() {
+interface ReservationFlowProps {
+  /** VERDE contact email from CMS — passed to StepDone confirmation message. */
+  contactEmail?: string | null
+}
+
+export function ReservationFlow({ contactEmail }: ReservationFlowProps) {
   const [stepIndex, setStepIndex] = useState(0)
   const [draft, setDraft] = useState<ReservationDraft>(createEmptyDraft)
   const [errors, setErrors] = useState<Errors>({})
@@ -180,7 +185,7 @@ export function ReservationFlow() {
     setStepIndex((i) => Math.max(i - 1, 0))
   }
 
-  function restart() {
+  const restart = useCallback(() => {
     setDraft(createEmptyDraft())
     setErrors({})
     setStepIndex(0)
@@ -194,7 +199,14 @@ export function ReservationFlow() {
     document
       .getElementById('reservation-top')
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  }, [])
+
+  // Listen for the header CTA event — fired when the user clicks "Rezervovat
+  // pobyt" while already on /rezervace (same-URL navigation would be a no-op).
+  useEffect(() => {
+    window.addEventListener('verde:new-reservation', restart)
+    return () => window.removeEventListener('verde:new-reservation', restart)
+  }, [restart])
 
   const progressSteps = RESERVATION_STEPS.slice(0, 5)
 
@@ -323,6 +335,7 @@ export function ReservationFlow() {
               refNumber={refNumber}
               confirmedTotal={confirmedTotal}
               confirmedDeposit={confirmedDeposit}
+              contactEmail={contactEmail}
               onRestart={restart}
             />
           )}

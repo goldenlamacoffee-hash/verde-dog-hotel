@@ -14,12 +14,21 @@ interface Props {
   confirmedTotal?: number | null
   /** Server-confirmed deposit — overrides client-side estimate when available. */
   confirmedDeposit?: number | null
+  /**
+   * VERDE contact email from CMS site_settings — shown in the confirmation
+   * message so guests know who to contact. Falls back to a neutral sentence
+   * when not configured.
+   */
+  contactEmail?: string | null
   onRestart: () => void
 }
 
-export function StepDone({ draft, estimate, refNumber, confirmedTotal, confirmedDeposit, onRestart }: Props) {
+export function StepDone({ draft, estimate, refNumber, confirmedTotal, confirmedDeposit, contactEmail, onRestart }: Props) {
   const displayTotal = confirmedTotal ?? estimate.total
   const displayDeposit = confirmedDeposit ?? estimate.deposit
+  const greeting = draft.owner.firstName
+    ? `Děkujeme, ${draft.owner.firstName}.`
+    : 'Děkujeme.'
   return (
     <div className="mx-auto max-w-xl text-center">
       <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-secondary">
@@ -29,9 +38,11 @@ export function StepDone({ draft, estimate, refNumber, confirmedTotal, confirmed
         Žádost byla odeslána
       </h2>
       <p className="mt-3 text-pretty leading-relaxed text-verde-moss">
-        Děkujeme, {draft.owner.firstName || 'milý pejskaři'}. Vaši nezávaznou žádost jsme přijali.
-        Ozveme se vám do 24 hodin na {draft.owner.email || 'váš e-mail'} s potvrzením termínu a
-        pokyny k rezervační záloze.
+        {greeting} Vaši nezávaznou žádost jsme přijali.{' '}
+        {contactEmail
+          ? <>Ozveme se vám do 24 hodin na <a href={`mailto:${contactEmail}`} className="font-medium text-verde-green hover:underline">{contactEmail}</a> s potvrzením termínu a pokyny k rezervační záloze.</>
+          : 'Ozveme se vám do 24 hodin s potvrzením termínu a pokyny k rezervační záloze.'
+        }
       </p>
 
       <div className="mt-8 rounded-2xl border border-border bg-secondary/50 p-6 text-left">

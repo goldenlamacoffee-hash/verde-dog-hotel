@@ -89,14 +89,32 @@ export function SiteHeader({ navItems, ctaLabel, darkLogoSrc, lightLogoSrc }: Pr
         </nav>
 
         <div className="flex items-center gap-2">
-          <CtaLink
-            href="/rezervace"
-            size="md"
-            variant={solid ? 'primary' : 'light'}
-            className="hidden sm:inline-flex"
-          >
-            {ctaLabel ?? 'Rezervovat pobyt'}
-          </CtaLink>
+          {pathname === '/rezervace' ? (
+            // Already on the reservation page — dispatch an event so
+            // ReservationFlow resets without a full navigation.
+            <button
+              type="button"
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('verde:new-reservation'))
+              }
+              className={
+                solid
+                  ? 'hidden sm:inline-flex items-center justify-center rounded-xl bg-verde-green px-4 py-2.5 text-sm font-semibold text-verde-white shadow-sm transition-colors hover:bg-verde-deep'
+                  : 'hidden sm:inline-flex items-center justify-center rounded-xl border border-verde-white/30 bg-verde-white/10 px-4 py-2.5 text-sm font-semibold text-verde-white backdrop-blur-sm transition-colors hover:bg-verde-white/20'
+              }
+            >
+              {ctaLabel ?? 'Rezervovat pobyt'}
+            </button>
+          ) : (
+            <CtaLink
+              href="/rezervace"
+              size="md"
+              variant={solid ? 'primary' : 'light'}
+              className="hidden sm:inline-flex"
+            >
+              {ctaLabel ?? 'Rezervovat pobyt'}
+            </CtaLink>
+          )}
           <MobileNav solid={solid} navItems={navigation} />
         </div>
       </div>
