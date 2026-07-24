@@ -3,6 +3,25 @@ import { updateSiteSetting } from '@/lib/admin/actions'
 import { getOccupancyForRange } from '@/lib/capacity'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { CapacityOverridesPanel } from '@/components/admin/capacity/capacity-overrides-panel'
+import { CalendarAppearanceEditor } from '@/components/admin/capacity/calendar-appearance-editor'
+import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
+import type { CalendarAppearance } from '@/lib/types'
+
+/** Validate a single hex color value. */
+function isValidHex(v: unknown): v is string {
+  return typeof v === 'string' && /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(v)
+}
+
+/** Merge DB-stored appearance over defaults, validating each key. */
+function resolveAppearance(raw: unknown): CalendarAppearance {
+  if (!raw || typeof raw !== 'object') return { ...CALENDAR_APPEARANCE_DEFAULTS }
+  const db = raw as Record<string, unknown>
+  const result = { ...CALENDAR_APPEARANCE_DEFAULTS }
+  for (const key of Object.keys(CALENDAR_APPEARANCE_DEFAULTS) as (keyof CalendarAppearance)[]) {
+    if (isValidHex(db[key])) result[key] = db[key] as string
+  }
+  return result
+}
 
 export const metadata = { title: 'Kapacita | VERDE Admin' }
 
@@ -43,11 +62,14 @@ export default async function CapacityPage() {
   const fromStr  = fmtDate(today)
   const toStr    = fmtDate(addDays(today, 30))
 
-  const [capacitySetting, { data: overrides }, occupancyResult] = await Promise.all([
+  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance] = await Promise.all([
     getSiteSetting('capacity'),
     getCapacityOverrides(),
     getOccupancyForRange(fromStr, toStr),
+    getSiteSetting('availabilityCalendarAppearance'),
   ])
+
+  const calendarAppearance = resolveAppearance(rawAppearance)
 
   const maxDogs: number =
     capacitySetting && typeof capacitySetting === 'object'
@@ -230,6 +252,24 @@ export default async function CapacityPage() {
           Blokace a omezení kapacity
         </h2>
         <CapacityOverridesPanel overrides={overrides ?? []} />
+      </div>
+
+      {/* ── Calendar appearance ─────────────────────────────────────────────── */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
+      >
+        <h2
+          className="text-xs font-semibold uppercase tracking-wider mb-1"
+          style={{ color: 'var(--admin-text-muted)' }}
+        >
+          Vzhled dostupnosti v kalendáři
+        </h2>
+        <p className="mb-5 text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+          Barvy datumových buněk v kalendáři rezervace. Změny se projeví na veřejné stránce
+          okamžitě po uložení — bez nutnosti nasazení.
+        </p>
+        <CalendarAppearanceEditor initialAppearance={calendarAppearance} />
       </div>
     </div>
   )

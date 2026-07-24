@@ -110,6 +110,43 @@ export interface TeamMember {
   role: string
 }
 
+// ─── Calendar appearance ──────────────────────────────────────────────────────
+
+/**
+ * Stored under site_settings key `availabilityCalendarAppearance`.
+ * All values must be valid CSS hex colors (#RRGGBB or #RGB).
+ */
+export interface CalendarAppearance {
+  availableBackground: string
+  availableText:       string
+  limitedBackground:   string
+  limitedText:         string
+  lastBackground:      string
+  lastText:            string
+  fullBackground:      string
+  fullText:            string
+  selectedBackground:  string
+  selectedText:        string
+  rangeBackground:     string
+  todayBorder:         string
+}
+
+/** VERDE brand defaults — used as fallback when CMS value is missing/invalid. */
+export const CALENDAR_APPEARANCE_DEFAULTS: CalendarAppearance = {
+  availableBackground: '#E6F4EA',
+  availableText:       '#14532D',
+  limitedBackground:   '#FFF1B8',
+  limitedText:         '#7A4B00',
+  lastBackground:      '#FFD7B5',
+  lastText:            '#8A2C0D',
+  fullBackground:      '#FADDDD',
+  fullText:            '#991B1B',
+  selectedBackground:  '#174C2D',
+  selectedText:        '#FFFFFF',
+  rangeBackground:     '#D5E9DA',
+  todayBorder:         '#315E41',
+}
+
 /**
  * Canonical shape of the `contact` row in site_settings.
  * Used by: admin save action, admin editor, public-data helper,

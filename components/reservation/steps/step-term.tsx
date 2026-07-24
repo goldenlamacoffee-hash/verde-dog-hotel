@@ -3,6 +3,7 @@
 import { AvailabilityCalendar } from '../availability-calendar'
 import { StepIntro, StepNav } from '../step-nav'
 import type { Estimate, ReservationDraft } from '@/lib/reservation'
+import type { CalendarAppearance } from '@/lib/types'
 
 interface Props {
   draft: ReservationDraft
@@ -10,9 +11,10 @@ interface Props {
   estimate: Estimate
   onChange: (patch: Partial<ReservationDraft>) => void
   onNext: () => void
+  calendarAppearance?: CalendarAppearance
 }
 
-export function StepTerm({ draft, errors, estimate, onChange, onNext }: Props) {
+export function StepTerm({ draft, errors, estimate, onChange, onNext, calendarAppearance }: Props) {
   // Continue is only enabled when both dates are present and departure > arrival
   const canContinue =
     Boolean(draft.arrival) &&
@@ -45,6 +47,7 @@ export function StepTerm({ draft, errors, estimate, onChange, onNext }: Props) {
         onArrivalChange={(date) => onChange({ arrival: date })}
         onDepartureChange={(date) => onChange({ departure: date })}
         onRangeChange={(arrival, departure) => onChange({ arrival, departure })}
+        appearance={calendarAppearance}
       />
 
       <StepNav onNext={onNext} disabledNext={!canContinue} />
