@@ -183,24 +183,27 @@ export function AvailabilityCalendar({
 
     const occ = occupancy[dateStr]
     const status = getDayStatus(occ)
+    const isFull = status === 'full'
 
     if (!arrival || (arrival && departure)) {
-      // Start fresh — set arrival
-      // Fully booked days can't be arrival days
-      if (status === 'full') return
+      // Start fresh — set arrival.
+      // Fully booked days can't be arrival days (they would be an occupied night).
+      if (isFull) return
       onArrivalChange(dateStr)
       onDepartureChange('')
     } else {
-      // Already have arrival, now picking departure
+      // Already have arrival, now picking departure.
       if (dateStr <= arrival) {
-        // Clicked before or on arrival → reset arrival to this date
-        if (status !== 'full') {
+        // Clicked before or on arrival → reset arrival to this date (if not full)
+        if (!isFull) {
           onArrivalChange(dateStr)
           onDepartureChange('')
         }
         return
       }
-      // Validate: no fully-booked night in [arrival, dateStr)
+      // dateStr > arrival: this is a departure candidate.
+      // The departure date itself is NOT an occupied night, so a fully-booked
+      // departure date is allowed. We only check nights in [arrival, dateStr).
       const blockingDate = findBlockingNight(arrival, dateStr, occupancy)
       onDepartureChange(dateStr)
       if (blockingDate === null && onRangeChange) {
@@ -289,12 +292,29 @@ export function AvailabilityCalendar({
           const isHoverDep   = selectingDeparture && hoverDate === dateStr && hoverDate > arrival && !departure
 
           const isFullyBooked = status === 'full'
-          const isDisabled    = isPast || isFullyBooked
+
+          // A fully-booked date is only valid as DEPARTURE (the departure night
+          // is not consumed). It cannot be selected as arrival.
+          // Context: when selectingDeparture is true AND dateStr > arrival,
+          // a full date is still clickable.
+          const isValidDepartureCandidate =
+            selectingDeparture && dateStr > arrival && isFullyBooked
+
+          // Disabled = past, OR (fully booked AND not a valid departure candidate)
+          const isDisabled = isPast || (isFullyBooked && !isValidDepartureCandidate)
+
           const hasBlockingNight = blockingNight !== null && isInRange && (
             occupancy[dateStr]?.free === 0
           )
 
-          const ariaLabel = getDayLabel(dateStr, occ)
+          // Context-aware aria-label
+          const ariaLabel = isValidDepartureCandidate
+            ? (() => {
+                const d = new Date(dateStr + 'T00:00:00')
+                const label = `${d.getDate()}. ${MONTH_NAMES_CS[d.getMonth()].toLowerCase()}`
+                return `${label} – plně obsazeno, lze zvolit jako datum odjezdu`
+              })()
+            : getDayLabel(dateStr, occ)
 
           return (
             <button
@@ -318,7 +338,10 @@ export function AvailabilityCalendar({
                 // Availability colours (not selected, not past)
                 !isPast && !isArrival && !isDeparture && !isHoverDep && (() => {
                   switch (status) {
-                    case 'full':    return 'bg-red-50 text-red-600 cursor-not-allowed ring-1 ring-red-200 dark:bg-red-950/30 dark:text-red-400 dark:ring-red-800'
+                    // Full: no hover when truly disabled; hover allowed when valid as departure
+                    case 'full':    return isValidDepartureCandidate
+                      ? 'bg-red-50 text-red-600 hover:bg-red-100 ring-1 ring-red-200 dark:bg-red-950/30 dark:text-red-400 dark:ring-red-800'
+                      : 'bg-red-50 text-red-600 cursor-not-allowed ring-1 ring-red-200 dark:bg-red-950/30 dark:text-red-400 dark:ring-red-800'
                     case 'scarce':  return 'bg-orange-50 text-orange-700 hover:bg-orange-100 ring-1 ring-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:ring-orange-800'
                     case 'partial': return 'bg-amber-50 text-amber-700 hover:bg-amber-100 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:ring-amber-800'
                     case 'free':    return 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 ring-1 ring-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:ring-emerald-800'
