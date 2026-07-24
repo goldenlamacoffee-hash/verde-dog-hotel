@@ -128,7 +128,8 @@ export interface EmailLog {
 /** Business rules — later sourced from PricingRule / CapacityRule. */
 export const BOOKING_RULES = {
   minNights: 1,
-  maxNights: 30,
+  // maxNights is intentionally absent: VERDE has no maximum stay by default.
+  // The optional limit is a CMS setting (site_settings key 'maximumStayNights').
   // UI safety ceiling — actual hotel availability is enforced server-side
   // by the create_reservation() RPC capacity engine.
   maxDogs: 10,

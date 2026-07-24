@@ -143,8 +143,32 @@ export async function POST(req: NextRequest) {
   const nights = Math.round(
     (departureDate.getTime() - arrivalDate.getTime()) / 86_400_000
   )
-  if (nights > 30) {
-    return NextResponse.json({ error: 'Maximální délka pobytu je 30 nocí.' }, { status: 422 })
+
+  // Load the optional maximum-stay setting from CMS.
+  // null / missing / 0 → no maximum enforced.
+  // Positive integer   → reject stays longer than this value.
+  {
+    const supabaseForSettings = createServiceRoleClient()
+    const { data: maxStaySetting } = await supabaseForSettings
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'maximumStayNights')
+      .maybeSingle()
+    const rawNights = (maxStaySetting?.value as Record<string, unknown> | null)?.nights
+    const maxStayNights =
+      typeof rawNights === 'number' && Number.isInteger(rawNights) && rawNights >= 1
+        ? rawNights
+        : null
+
+    if (maxStayNights !== null && nights > maxStayNights) {
+      return NextResponse.json(
+        {
+          error: `Maximální délka pobytu je ${maxStayNights} nocí.`,
+          code: 'MAXIMUM_STAY_EXCEEDED',
+        },
+        { status: 422 }
+      )
+    }
   }
 
   // 4. Build RPC payload — map form shape to DB shape

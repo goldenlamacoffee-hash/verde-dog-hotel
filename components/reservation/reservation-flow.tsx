@@ -27,9 +27,14 @@ interface ReservationFlowProps {
   contactEmail?: string | null
   /** CMS-configured calendar colors fetched server-side. */
   calendarAppearance?: CalendarAppearance
+  /**
+   * Optional maximum stay length (occupied nights) from CMS.
+   * null = no maximum. Positive integer = stay must not exceed this value.
+   */
+  maximumStayNights?: number | null
 }
 
-export function ReservationFlow({ contactEmail, calendarAppearance }: ReservationFlowProps) {
+export function ReservationFlow({ contactEmail, calendarAppearance, maximumStayNights }: ReservationFlowProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   // Track the last-seen `new` token so we only reset once per unique value.
@@ -118,6 +123,16 @@ export function ReservationFlow({ contactEmail, calendarAppearance }: Reservatio
       if (!draft.departure) e.departure = 'Vyberte datum odjezdu.'
       if (draft.arrival && draft.departure && estimate.nights <= 0) {
         e.departure = 'Odjezd musí být po příjezdu.'
+      }
+      if (
+        draft.arrival &&
+        draft.departure &&
+        estimate.nights > 0 &&
+        typeof maximumStayNights === 'number' &&
+        maximumStayNights >= 1 &&
+        estimate.nights > maximumStayNights
+      ) {
+        e.departure = `Maximální délka pobytu je ${maximumStayNights} nocí.`
       }
     }
     if (activeStep.id === 'dogs') {
@@ -298,6 +313,7 @@ export function ReservationFlow({ contactEmail, calendarAppearance }: Reservatio
               onChange={update}
               onNext={next}
               calendarAppearance={calendarAppearance}
+              maximumStayNights={maximumStayNights ?? null}
             />
           )}
           {activeStep.id === 'dogs' && (

@@ -96,7 +96,7 @@ export async function updateSiteSetting(key: string, value: object) {
   if (key === 'contact') {
     revalidatePath('/kontakt')
   }
-  if (key === 'availabilityCalendarAppearance') {
+  if (key === 'availabilityCalendarAppearance' || key === 'maximumStayNights') {
     revalidatePath('/rezervace')
   }
 }
