@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { PageHeader } from '@/components/common/page-header'
 import { ReservationFlow } from '@/components/reservation/reservation-flow'
@@ -24,7 +25,9 @@ export default async function ReservationPage() {
       />
       <section className="bg-background py-16 md:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <ReservationFlow contactEmail={contact.email ?? null} />
+          <Suspense>
+            <ReservationFlow contactEmail={contact.email ?? null} />
+          </Suspense>
         </div>
       </section>
     </>

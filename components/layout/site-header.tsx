@@ -9,6 +9,19 @@ import { Logo } from '@/components/brand/logo'
 import { CtaLink } from '@/components/common/cta-button'
 import { MobileNav } from './mobile-nav'
 
+/**
+ * Returns a fresh reservation URL.
+ * When already on /rezervace a ?new=<token> param forces the router to
+ * treat it as a new navigation and ReservationFlow detects the changed
+ * param to call restart(). From any other page it is a plain navigation.
+ */
+function reservationHref(pathname: string): string {
+  if (pathname.startsWith('/rezervace')) {
+    return `/rezervace?new=${Date.now()}`
+  }
+  return '/rezervace'
+}
+
 interface NavItem { label: string; href: string }
 
 interface Props {
@@ -89,33 +102,15 @@ export function SiteHeader({ navItems, ctaLabel, darkLogoSrc, lightLogoSrc }: Pr
         </nav>
 
         <div className="flex items-center gap-2">
-          {pathname === '/rezervace' ? (
-            // Already on the reservation page — dispatch an event so
-            // ReservationFlow resets without a full navigation.
-            <button
-              type="button"
-              onClick={() =>
-                window.dispatchEvent(new CustomEvent('verde:new-reservation'))
-              }
-              className={
-                solid
-                  ? 'hidden sm:inline-flex items-center justify-center rounded-xl bg-verde-green px-4 py-2.5 text-sm font-semibold text-verde-white shadow-sm transition-colors hover:bg-verde-deep'
-                  : 'hidden sm:inline-flex items-center justify-center rounded-xl border border-verde-white/30 bg-verde-white/10 px-4 py-2.5 text-sm font-semibold text-verde-white backdrop-blur-sm transition-colors hover:bg-verde-white/20'
-              }
-            >
-              {ctaLabel ?? 'Rezervovat pobyt'}
-            </button>
-          ) : (
-            <CtaLink
-              href="/rezervace"
-              size="md"
-              variant={solid ? 'primary' : 'light'}
-              className="hidden sm:inline-flex"
-            >
-              {ctaLabel ?? 'Rezervovat pobyt'}
-            </CtaLink>
-          )}
-          <MobileNav solid={solid} navItems={navigation} />
+          <CtaLink
+            href={reservationHref(pathname)}
+            size="md"
+            variant={solid ? 'primary' : 'light'}
+            className="hidden sm:inline-flex"
+          >
+            {ctaLabel ?? 'Rezervovat pobyt'}
+          </CtaLink>
+          <MobileNav solid={solid} navItems={navigation} pathname={pathname} />
         </div>
       </div>
     </header>

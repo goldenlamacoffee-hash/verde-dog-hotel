@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Check, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -26,6 +27,11 @@ interface ReservationFlowProps {
 }
 
 export function ReservationFlow({ contactEmail }: ReservationFlowProps) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  // Track the last-seen `new` token so we only reset once per unique value.
+  const lastNewToken = useRef<string | null>(null)
+
   const [stepIndex, setStepIndex] = useState(0)
   const [draft, setDraft] = useState<ReservationDraft>(createEmptyDraft)
   const [errors, setErrors] = useState<Errors>({})
@@ -201,12 +207,18 @@ export function ReservationFlow({ contactEmail }: ReservationFlowProps) {
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
-  // Listen for the header CTA event — fired when the user clicks "Rezervovat
-  // pobyt" while already on /rezervace (same-URL navigation would be a no-op).
+  // Watch the `?new=<token>` search param injected by the header/mobile CTAs.
+  // A changed token means the user explicitly requested a fresh reservation
+  // (even when already on /rezervace). We reset once per unique token value,
+  // then clean the URL so the param never persists in history.
   useEffect(() => {
-    window.addEventListener('verde:new-reservation', restart)
-    return () => window.removeEventListener('verde:new-reservation', restart)
-  }, [restart])
+    const token = searchParams.get('new')
+    if (token && token !== lastNewToken.current) {
+      lastNewToken.current = token
+      restart()
+      router.replace('/rezervace')
+    }
+  }, [searchParams, restart, router])
 
   const progressSteps = RESERVATION_STEPS.slice(0, 5)
 
