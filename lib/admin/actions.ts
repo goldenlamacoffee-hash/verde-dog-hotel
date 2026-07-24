@@ -87,8 +87,15 @@ export async function updateSiteSetting(key: string, value: object) {
     .from('site_settings')
     .upsert({ key, value, updated_at: new Date().toISOString(), updated_by: user?.id })
   if (error) throw new Error(error.message)
-  revalidatePath('/')
+
+  // Always revalidate the admin page and global layout (covers footer on all pages)
   revalidatePath('/admin/obsah')
+  revalidatePath('/', 'layout')
+
+  // Revalidate specific public pages that render contact settings
+  if (key === 'contact') {
+    revalidatePath('/kontakt')
+  }
 }
 
 export async function upsertFaqItem(data: {

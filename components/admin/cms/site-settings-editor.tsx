@@ -2,21 +2,30 @@
 
 import { useState, useTransition, useRef } from 'react'
 import Image from 'next/image'
-import { Image as ImageIcon, X } from 'lucide-react'
+import { Image as ImageIcon, Plus, Trash2, X } from 'lucide-react'
 import { updateSiteSetting } from '@/lib/admin/actions'
+import type { ContactSettingsValue } from '@/lib/types'
 
 interface Props {
-  initialContact:  Record<string, string> | null
+  initialContact:  Record<string, unknown> | null
   initialSeo:      Record<string, string> | null
   initialCapacity: Record<string, unknown> | null
   initialBrand:    Record<string, string> | null
 }
 
 export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity, initialBrand }: Props) {
-  const [contact,  setContact]  = useState(initialContact  ?? {})
-  const [seo,      setSeo]      = useState(initialSeo      ?? {})
+  const [contact,  setContact]  = useState<ContactSettingsValue>({
+    phone:        (initialContact?.phone        as string)  ?? '',
+    email:        (initialContact?.email        as string)  ?? '',
+    address:      (initialContact?.address      as string)  ?? '',
+    web:          (initialContact?.web          as string)  ?? '',
+    facebook:     (initialContact?.facebook     as string)  ?? '',
+    instagram:    (initialContact?.instagram    as string)  ?? '',
+    openingHours: (initialContact?.openingHours as ContactSettingsValue['openingHours']) ?? [],
+  })
+  const [seo,      setSeo]      = useState<Record<string, string>>((initialSeo as Record<string, string>) ?? {})
   const [capacity, setCapacity] = useState<Record<string, unknown>>(initialCapacity ?? {})
-  const [brand,    setBrand]    = useState<Record<string, string>>(initialBrand ?? {})
+  const [brand,    setBrand]    = useState<Record<string, string>>((initialBrand as Record<string, string>) ?? {})
   const [isPending, startTransition] = useTransition()
   const [saved, setSaved] = useState<string | null>(null)
 
@@ -28,26 +37,87 @@ export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity
     })
   }
 
+  // Opening hours row helpers
+  function addHoursRow() {
+    setContact(p => ({ ...p, openingHours: [...(p.openingHours ?? []), { days: '', hours: '' }] }))
+  }
+  function updateHoursRow(idx: number, field: 'days' | 'hours', val: string) {
+    setContact(p => {
+      const rows = [...(p.openingHours ?? [])]
+      rows[idx] = { ...rows[idx], [field]: val }
+      return { ...p, openingHours: rows }
+    })
+  }
+  function removeHoursRow(idx: number) {
+    setContact(p => ({ ...p, openingHours: (p.openingHours ?? []).filter((_, i) => i !== idx) }))
+  }
+
+  const inputStyle = { background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }
+
   return (
     <div className="space-y-6">
       {/* Contact */}
       <Section title="Kontaktní informace">
-        {[
+        {([
           ['Telefon', 'phone'],
           ['E-mail', 'email'],
-          ['Adresa', 'address'],
+          ['Adresa / Lokalita', 'address'],
+          ['Webová adresa', 'web'],
           ['Facebook URL', 'facebook'],
           ['Instagram URL', 'instagram'],
-        ].map(([label, key]) => (
+        ] as [string, keyof ContactSettingsValue][]).map(([label, key]) => (
           <Field key={key} label={label}>
             <input
-              value={contact[key] ?? ''}
+              value={(contact[key] as string) ?? ''}
               onChange={e => setContact(p => ({ ...p, [key]: e.target.value }))}
               className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
+              style={inputStyle}
             />
           </Field>
         ))}
+
+        {/* Opening hours — editable row list */}
+        <Field label="Otevírací doba">
+          <div className="space-y-2">
+            {(contact.openingHours ?? []).map((row, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  value={row.days}
+                  onChange={e => updateHoursRow(idx, 'days', e.target.value)}
+                  placeholder="Popis (např. Příjezdy)"
+                  className="flex-1 rounded-lg px-3 py-1.5 text-sm outline-none"
+                  style={inputStyle}
+                />
+                <input
+                  value={row.hours}
+                  onChange={e => updateHoursRow(idx, 'hours', e.target.value)}
+                  placeholder="Čas (např. 9:00 – 18:00)"
+                  className="w-36 rounded-lg px-3 py-1.5 text-sm outline-none"
+                  style={inputStyle}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeHoursRow(idx)}
+                  className="shrink-0 rounded-lg p-1.5"
+                  title="Odebrat řádek"
+                  style={{ color: 'var(--admin-text-muted)' }}
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addHoursRow}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs"
+              style={{ background: 'var(--admin-accent-light)', color: 'var(--admin-accent)', border: '1px solid var(--admin-card-border)' }}
+            >
+              <Plus className="size-3.5" />
+              Přidat řádek
+            </button>
+          </div>
+        </Field>
+
         <SaveButton label="Uložit kontakt" saved={saved === 'contact'} isPending={isPending} onClick={() => save('contact', contact)} />
       </Section>
 

@@ -3,24 +3,19 @@ import { Mail, MapPin, Phone } from 'lucide-react'
 import { navigation, siteSettings } from '@/content/site'
 import { Logo } from '@/components/brand/logo'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
-import { getPublicSiteSetting } from '@/lib/public-data'
+import { getPublicContactSettings } from '@/lib/public-data'
 
 export async function SiteFooter() {
-  // Read live contact info from DB; fall back to static content file values
-  const dbContact = await getPublicSiteSetting<{
-    email?: string
-    phone?: string
-    address?: string
-    instagram?: string
-    facebook?: string
-  }>('contact')
+  // Single authoritative source for all contact fields — DB with static fallback
+  const contact = await getPublicContactSettings()
 
-  const { contact, legalLinks, slogan } = siteSettings
-  const email     = dbContact?.email     ?? contact.email
-  const phone     = dbContact?.phone     ?? contact.phone
-  const instagram = dbContact?.instagram ?? contact.instagram
-  const facebook  = dbContact?.facebook  ?? contact.facebook
-  const region    = dbContact?.address   ?? contact.region
+  const { legalLinks, slogan } = siteSettings
+  const email     = contact.email
+  const phone     = contact.phone
+  const instagram = contact.instagram
+  const facebook  = contact.facebook
+  const region    = contact.address
+  const openingHours = contact.openingHours ?? siteSettings.contact.openingHours
 
   const year = new Date().getFullYear()
 
@@ -39,7 +34,7 @@ export async function SiteFooter() {
             <Logo tone="light" imgClassName="h-14 w-auto" />
             <p className="text-sm leading-relaxed text-verde-white/70">
               {siteSettings.tagline}. Klidné venkovské zázemí pro vašeho psa
-              v okolí {region}.
+              {region ? ` v okolí ${region}` : ''}.
             </p>
           </div>
 
@@ -62,28 +57,34 @@ export async function SiteFooter() {
           <div className="flex flex-col gap-3">
             <h2 className="label-caps text-verde-white/60">Kontakt</h2>
             <ul className="flex flex-col gap-3 text-sm">
-              <li>
-                <a
-                  href={`tel:${phone.replace(/\s/g, '')}`}
-                  className="flex items-center gap-2.5 text-verde-white/75 transition-colors hover:text-verde-white"
-                >
-                  <Phone className="size-4 shrink-0" aria-hidden="true" />
-                  {phone}
-                </a>
-              </li>
-              <li>
-                <a
-                  href={`mailto:${email}`}
-                  className="flex items-center gap-2.5 text-verde-white/75 transition-colors hover:text-verde-white"
-                >
-                  <Mail className="size-4 shrink-0" aria-hidden="true" />
-                  {email}
-                </a>
-              </li>
-              <li className="flex items-center gap-2.5 text-verde-white/75">
-                <MapPin className="size-4 shrink-0" aria-hidden="true" />
-                {region}
-              </li>
+              {phone && (
+                <li>
+                  <a
+                    href={`tel:${phone.replace(/\s/g, '')}`}
+                    className="flex items-center gap-2.5 text-verde-white/75 transition-colors hover:text-verde-white"
+                  >
+                    <Phone className="size-4 shrink-0" aria-hidden="true" />
+                    {phone}
+                  </a>
+                </li>
+              )}
+              {email && (
+                <li>
+                  <a
+                    href={`mailto:${email}`}
+                    className="flex items-center gap-2.5 text-verde-white/75 transition-colors hover:text-verde-white"
+                  >
+                    <Mail className="size-4 shrink-0" aria-hidden="true" />
+                    {email}
+                  </a>
+                </li>
+              )}
+              {region && (
+                <li className="flex items-center gap-2.5 text-verde-white/75">
+                  <MapPin className="size-4 shrink-0" aria-hidden="true" />
+                  {region}
+                </li>
+              )}
             </ul>
             <div className="mt-2 flex items-center gap-3">
               {instagram ? (
@@ -116,7 +117,7 @@ export async function SiteFooter() {
           <div className="flex flex-col gap-3">
             <h2 className="label-caps text-verde-white/60">Otevírací doba</h2>
             <ul className="flex flex-col gap-2 text-sm text-verde-white/75">
-              {contact.openingHours.map((slot) => (
+              {openingHours.map((slot) => (
                 <li key={slot.days} className="flex justify-between gap-4">
                   <span>{slot.days}</span>
                   <span className="text-verde-white/60">{slot.hours}</span>
@@ -128,7 +129,7 @@ export async function SiteFooter() {
 
         <div className="flex flex-col gap-4 border-t border-verde-white/10 pt-8 text-xs text-verde-white/55 md:flex-row md:items-center md:justify-between">
           <p>
-            © {year} {contact.company.name}. Všechna práva vyhrazena.
+            © {year} {siteSettings.contact.company.name}. Všechna práva vyhrazena.
           </p>
           <ul className="flex flex-wrap gap-x-5 gap-y-2">
             {legalLinks.map((item) => (

@@ -3,7 +3,7 @@
  * All functions are safe to call from Server Components.
  */
 
-import type { FaqItem, PriceItem, Testimonial } from '@/lib/types'
+import type { ContactSettingsValue, FaqItem, PriceItem, Testimonial } from '@/lib/types'
 import { faqItems as staticFaq } from '@/content/faq'
 import { priceItems as staticPrices } from '@/content/services'
 import { testimonials as staticTestimonials } from '@/content/home'
@@ -79,6 +79,55 @@ export async function getPublicSiteSetting<T extends Record<string, unknown>>(
     // fall through
   }
   return null
+}
+
+// ─── Contact settings ─────────────────────────────────────────────────────────
+
+/**
+ * Fetch the `contact` site_setting row and merge it over the static fallback.
+ *
+ * Returns a fully-resolved ContactSettingsValue — callers never need to handle
+ * the null-DB case themselves. The static values in content/site.ts are used
+ * only when no DB row exists yet or the DB is unreachable.
+ *
+ * Key names are the same ones the admin editor writes: phone, email, address,
+ * web, facebook, instagram, openingHours.
+ */
+export async function getPublicContactSettings(): Promise<ContactSettingsValue> {
+  const { siteSettings } = await import('@/content/site')
+  const { contact } = siteSettings
+
+  // Static fallback — only used when DB is unreachable or row doesn't exist yet
+  const fallback: ContactSettingsValue = {
+    phone:        contact.phone,
+    email:        contact.email,
+    address:      contact.region,
+    web:          contact.web,
+    facebook:     contact.facebook,
+    instagram:    contact.instagram,
+    openingHours: contact.openingHours,
+  }
+
+  const db = (await getPublicSiteSetting<Record<string, unknown>>('contact')) as ContactSettingsValue | null
+  if (!db) return fallback
+
+  // Merge: DB values override fallback only when they are non-empty strings.
+  // This prevents an empty admin save from wiping out the fallback.
+  function pick(dbVal: string | undefined, fbVal: string | undefined) {
+    return dbVal && dbVal.trim() !== '' ? dbVal : fbVal
+  }
+
+  return {
+    phone:        pick(db.phone,     fallback.phone),
+    email:        pick(db.email,     fallback.email),
+    address:      pick(db.address,   fallback.address),
+    web:          pick(db.web,       fallback.web),
+    facebook:     pick(db.facebook,  fallback.facebook),
+    instagram:    pick(db.instagram, fallback.instagram),
+    openingHours: (db.openingHours && db.openingHours.length > 0)
+      ? db.openingHours
+      : fallback.openingHours,
+  }
 }
 
 // ─── FAQ ──────────────────────────────────────────────────────────────────────
