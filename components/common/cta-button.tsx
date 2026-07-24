@@ -33,20 +33,21 @@ interface CtaLinkProps extends CtaVariantProps {
   href: string
   children: React.ReactNode
   className?: string
+  onClick?: React.MouseEventHandler<HTMLAnchorElement>
 }
 
-export function CtaLink({ href, children, variant, size, className }: CtaLinkProps) {
+export function CtaLink({ href, children, variant, size, className, onClick }: CtaLinkProps) {
   const external = href.startsWith('http')
   const classes = cn(ctaVariants({ variant, size, className }))
   if (external) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={classes}>
+      <a href={href} target="_blank" rel="noopener noreferrer" className={classes} onClick={onClick}>
         {children}
       </a>
     )
   }
   return (
-    <Link href={href} className={classes}>
+    <Link href={href} className={classes} onClick={onClick}>
       {children}
     </Link>
   )
