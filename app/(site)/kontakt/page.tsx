@@ -5,9 +5,7 @@ import { SectionHeading } from '@/components/common/section-heading'
 import { ContactForm } from '@/components/contact/contact-form'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { siteSettings } from '@/content/site'
-import { getPublicPageSection } from '@/lib/public-data'
-
-const { contact, slogan } = siteSettings
+import { getPublicPageSection, getPublicContactSettings } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'Kontakt',
@@ -16,7 +14,22 @@ export const metadata: Metadata = {
 }
 
 export default async function ContactPage() {
-  const hero = await getPublicPageSection('kontakt', 'hero')
+  const [hero, contact] = await Promise.all([
+    getPublicPageSection('kontakt', 'hero'),
+    getPublicContactSettings(),
+  ])
+
+  const { slogan } = siteSettings
+
+  // Derive safe href values from the DB-resolved contact
+  const phoneHref = contact.phone
+    ? `tel:${contact.phone.replace(/\s/g, '')}`
+    : siteSettings.contact.phoneHref
+
+  // Normalise website URL — ensure it has a protocol for the <a> href
+  const webHref = contact.web
+    ? contact.web.startsWith('http') ? contact.web : `https://${contact.web}`
+    : undefined
 
   return (
     <>
@@ -32,31 +45,47 @@ export default async function ContactPage() {
             <SectionHeading eyebrow="Spojení" title="Kontaktní údaje" withSprig />
 
             <ul className="flex flex-col gap-5">
-              <ContactRow icon={<Phone className="size-5" />} label="Telefon">
-                <a href={contact.phoneHref} className="hover:text-verde-green">
-                  {contact.phone}
-                </a>
-              </ContactRow>
-              <ContactRow icon={<Mail className="size-5" />} label="E-mail">
-                <a href={`mailto:${contact.email}`} className="hover:text-verde-green">
-                  {contact.email}
-                </a>
-              </ContactRow>
-              <ContactRow icon={<Globe className="size-5" />} label="Web">
-                <span>{contact.web}</span>
-              </ContactRow>
-              <ContactRow icon={<MapPin className="size-5" />} label="Lokalita">
-                <span>{contact.region}</span>
-              </ContactRow>
-              <ContactRow icon={<Clock className="size-5" />} label="Kdy nás zastihnete">
-                <div className="flex flex-col gap-0.5">
-                  {contact.openingHours.map((slot) => (
-                    <span key={slot.days}>
-                      {slot.days}: {slot.hours}
-                    </span>
-                  ))}
-                </div>
-              </ContactRow>
+              {contact.phone && (
+                <ContactRow icon={<Phone className="size-5" />} label="Telefon">
+                  <a href={phoneHref} className="hover:text-verde-green">
+                    {contact.phone}
+                  </a>
+                </ContactRow>
+              )}
+              {contact.email && (
+                <ContactRow icon={<Mail className="size-5" />} label="E-mail">
+                  <a href={`mailto:${contact.email}`} className="hover:text-verde-green">
+                    {contact.email}
+                  </a>
+                </ContactRow>
+              )}
+              {contact.web && (
+                <ContactRow icon={<Globe className="size-5" />} label="Web">
+                  {webHref ? (
+                    <a href={webHref} className="hover:text-verde-green" target="_blank" rel="noopener noreferrer">
+                      {contact.web}
+                    </a>
+                  ) : (
+                    <span>{contact.web}</span>
+                  )}
+                </ContactRow>
+              )}
+              {contact.address && (
+                <ContactRow icon={<MapPin className="size-5" />} label="Lokalita">
+                  <span>{contact.address}</span>
+                </ContactRow>
+              )}
+              {contact.openingHours && contact.openingHours.length > 0 && (
+                <ContactRow icon={<Clock className="size-5" />} label="Kdy nás zastihnete">
+                  <div className="flex flex-col gap-0.5">
+                    {contact.openingHours.map((slot) => (
+                      <span key={slot.days}>
+                        {slot.days}: {slot.hours}
+                      </span>
+                    ))}
+                  </div>
+                </ContactRow>
+              )}
             </ul>
 
             <div className="flex items-center gap-4 rounded-2xl bg-verde-deep p-6 text-verde-white">

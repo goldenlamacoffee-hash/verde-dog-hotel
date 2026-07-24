@@ -109,3 +109,21 @@ export interface TeamMember {
   name: string
   role: string
 }
+
+/**
+ * Canonical shape of the `contact` row in site_settings.
+ * Used by: admin save action, admin editor, public-data helper,
+ * /kontakt page, and SiteFooter — one definition, no drift.
+ *
+ * Key names match exactly what the admin editor saves to the DB.
+ */
+export interface ContactSettingsValue {
+  phone?: string
+  email?: string
+  address?: string
+  web?: string
+  facebook?: string
+  instagram?: string
+  /** Serialised opening hours array saved by the admin editor. */
+  openingHours?: { days: string; hours: string }[]
+}
