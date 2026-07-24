@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Menu, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -21,9 +21,21 @@ export function MobileNav({ solid, navItems, pathname: pathnameProp }: Props) {
   const navigation = navItems ?? staticNavigation
   const [open, setOpen] = useState(false)
   const routerPathname = usePathname()
+  const router = useRouter()
   const pathname = pathnameProp ?? routerPathname
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+
+  // Same-URL guard: push ?new= token imperatively on click, never during render.
+  function handleCtaClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (pathname.startsWith('/rezervace')) {
+      e.preventDefault()
+      setOpen(false)
+      router.push(`/rezervace?new=${Date.now()}`)
+    } else {
+      setOpen(false)
+    }
+  }
 
   // Close on route change
   useEffect(() => {
@@ -126,9 +138,10 @@ export function MobileNav({ solid, navItems, pathname: pathnameProp }: Props) {
 
             <div className="border-t border-border p-4">
               <CtaLink
-                href={pathname.startsWith('/rezervace') ? `/rezervace?new=${Date.now()}` : '/rezervace'}
+                href="/rezervace"
                 size="lg"
                 className="w-full"
+                onClick={handleCtaClick}
               >
                 Rezervovat pobyt
               </CtaLink>
