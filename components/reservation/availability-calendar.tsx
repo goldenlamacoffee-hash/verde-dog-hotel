@@ -483,12 +483,17 @@ function CalendarLegend({ appearance }: { appearance: CalendarAppearance }) {
   ]
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1" role="list" aria-label="Legenda dostupnosti">
+    <div
+      role="list"
+      aria-label="Legenda dostupnosti"
+      className="grid grid-cols-2 gap-x-3 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-4 sm:gap-y-2"
+    >
       {items.map((item) => (
         <div key={item.label} className="flex items-center gap-2" role="listitem">
+          {/* Mini sample cell — 28×28px on mobile, slightly larger on sm+ */}
           <span
             aria-hidden="true"
-            className="inline-flex h-8 w-8 flex-col items-center justify-center rounded-lg border text-[10px] font-bold leading-none"
+            className="inline-flex size-7 shrink-0 flex-col items-center justify-center rounded-md border text-[9px] font-bold leading-none sm:size-8 sm:rounded-lg sm:text-[10px]"
             style={{
               backgroundColor: item.bg,
               color: item.text,
@@ -496,7 +501,7 @@ function CalendarLegend({ appearance }: { appearance: CalendarAppearance }) {
             }}
           >
             <span>24</span>
-            {item.indicator && <span className="text-[8px]">{item.indicator}</span>}
+            {item.indicator && <span className="text-[7px] sm:text-[8px]">{item.indicator}</span>}
           </span>
           <span className="text-xs text-verde-stone">{item.label}</span>
         </div>
