@@ -30,6 +30,14 @@ export default async function ProtectedAdminLayout({
     redirect('/admin/login')
   }
 
+  // Enforce first-login password change for immediately-created accounts.
+  // Flag is stored in auth.users.app_metadata (server-authoritative, not spoofable).
+  const mustChangePassword =
+    (user.app_metadata as Record<string, unknown>)?.must_change_password === true
+  if (mustChangePassword) {
+    redirect('/admin/zmenit-heslo')
+  }
+
   const adminUser = {
     id: user.id,
     email: user.email ?? '',

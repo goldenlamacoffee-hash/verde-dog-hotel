@@ -32,19 +32,30 @@ function isValidRole(r: unknown): r is AppRole {
   return VALID_ROLES.includes(r as AppRole)
 }
 
-/** Write an audit_log entry for user-management events. */
+/**
+ * Write an audit_log entry for user-management events.
+ *
+ * The `action` column in audit_log is constrained to INSERT/UPDATE/DELETE.
+ * We map all user-management events to `action: 'UPDATE'` on the admin_roles
+ * table and store the semantic event name inside `new_data.event`.
+ * This keeps the event history queryable while respecting the DB constraint.
+ */
 async function auditUserEvent(
   actorId: string,
   targetUserId: string,
-  action: string,
+  event: string,
   meta: Record<string, unknown> = {},
 ) {
   const admin = createServiceRoleClient()
+  // Use INSERT for creation events, UPDATE for everything else
+  const action = (event === 'user_invited' || event === 'user_created_immediately')
+    ? 'INSERT'
+    : 'UPDATE'
   await admin.from('audit_log').insert({
     table_name: 'admin_roles',
-    record_id: targetUserId,
+    record_id:  targetUserId,
     action,
-    new_data: { actor_id: actorId, target_user_id: targetUserId, ...meta },
+    new_data: { event, actor_id: actorId, target_user_id: targetUserId, ...meta },
     changed_by: actorId,
   })
 }
@@ -485,6 +496,251 @@ export async function resendInvitation(user_id: string): Promise<ActionResult> {
   })
 
   REVALIDATE()
+  return { ok: true }
+}
+
+// ─── Create account immediately (no email) ───────────────────────────────────
+
+export interface CreateImmediateResult {
+  ok: boolean
+  error?: string
+  /** Only populated on success — never persisted or logged */
+  createdUserId?: string
+}
+
+export async function createAdminUserImmediately(payload: {
+  first_name: string
+  last_name: string
+  email: string
+  role: string
+  temporary_password: string
+}): Promise<CreateImmediateResult> {
+  // 1. Verify caller
+  const caller = await getAdminProfile()
+  if (!caller) return { ok: false, error: 'Nepřihlášen.' }
+  if (!canManageUsers(caller.role)) {
+    return { ok: false, error: 'Nemáte oprávnění spravovat uživatele.' }
+  }
+
+  // 2. Validate inputs
+  const email = payload.email.trim().toLowerCase()
+  const role = payload.role as AppRole
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: 'Neplatný e-mail.' }
+  }
+  if (!isValidRole(role)) {
+    return { ok: false, error: 'Neplatná role.' }
+  }
+  if (role === 'owner' && caller.role !== 'owner') {
+    return { ok: false, error: 'Roli vlastníka může přiřadit pouze jiný vlastník.' }
+  }
+
+  const pw = payload.temporary_password
+  if (!pw || pw.length < 12) {
+    return { ok: false, error: 'Dočasné heslo musí mít alespoň 12 znaků.' }
+  }
+  const pwChecks = [/[A-Z]/, /[a-z]/, /[0-9]/, /[^A-Za-z0-9]/]
+  if (!pwChecks.every((re) => re.test(pw))) {
+    return {
+      ok: false,
+      error: 'Heslo musí obsahovat velké písmeno, malé písmeno, číslo a speciální znak.',
+    }
+  }
+
+  const full_name = `${payload.first_name.trim()} ${payload.last_name.trim()}`.trim()
+  const admin = createServiceRoleClient()
+
+  // 3. Check for duplicate email
+  const { data: { users: existing } } = await admin.auth.admin.listUsers({ perPage: 1000 })
+  const existingUser = existing?.find((u) => u.email?.toLowerCase() === email)
+
+  if (existingUser) {
+    const { data: existingRole } = await admin
+      .from('admin_roles')
+      .select('user_id, role, active')
+      .eq('user_id', existingUser.id)
+      .single()
+
+    if (existingRole) {
+      return {
+        ok: false,
+        error: `Uživatel s tímto e-mailem již má přístup do administrace (role: ${ROLE_LABELS[existingRole.role as AppRole] ?? existingRole.role}).`,
+      }
+    }
+    // Existing Auth user without admin role — not supported in immediate creation
+    // (they already have a password; use invite flow to grant access)
+    return {
+      ok: false,
+      error:
+        'E-mail je již registrován v systému. Pro přidání administrátorského přístupu k existujícímu účtu použijte pozvánku.',
+    }
+  }
+
+  // 4. Create Auth user immediately — no email sent, email_confirm: true
+  const { data: createData, error: createErr } = await admin.auth.admin.createUser({
+    email,
+    password: pw,
+    email_confirm: true,
+    app_metadata: { must_change_password: true },
+    user_metadata: {
+      first_name: payload.first_name.trim(),
+      last_name: payload.last_name.trim(),
+      full_name,
+    },
+  })
+
+  if (createErr || !createData?.user) {
+    console.error('[verde] createUser error', {
+      code:    createErr?.code,
+      status:  createErr?.status,
+      message: createErr?.message,
+    })
+    return { ok: false, error: createErr?.message ?? 'Vytvoření účtu se nezdařilo.' }
+  }
+
+  const authUserId = createData.user.id
+
+  // 5. Upsert profile
+  const { error: profileErr } = await admin
+    .from('profiles')
+    .upsert({ id: authUserId, full_name }, { onConflict: 'id' })
+
+  if (profileErr) {
+    console.error('[verde] profile upsert failed after createUser:', profileErr.message)
+    // Cleanup Auth user to avoid orphan
+    await admin.auth.admin.deleteUser(authUserId).catch(() => {})
+    return { ok: false, error: 'Profil se nepodařilo vytvořit. Účet byl odstraněn.' }
+  }
+
+  // 6. Insert admin_roles
+  const { error: roleErr } = await admin.from('admin_roles').insert({
+    user_id: authUserId,
+    role,
+    full_name,
+    active: true,
+  })
+
+  if (roleErr) {
+    await admin.auth.admin.deleteUser(authUserId).catch(() => {})
+    await admin.from('profiles').delete().eq('id', authUserId)
+    return { ok: false, error: `Přiřazení role selhalo: ${roleErr.message}` }
+  }
+
+  // 7. Audit — do NOT log the password
+  await auditUserEvent(caller.id, authUserId, 'user_created_immediately', {
+    email,
+    role,
+    full_name,
+  })
+
+  REVALIDATE()
+  return { ok: true, createdUserId: authUserId }
+}
+
+// ─── Initialize password (first-login, atomic) ───────────────────────────────
+//
+// This is the ONLY path that clears the must_change_password flag.
+// clearMustChangePassword() does NOT exist as a standalone export —
+// the flag can only be cleared as a side-effect of a successful password update.
+//
+// Flow (all server-side, service-role key never leaves the server):
+//  1. Obtain the authenticated user from the cookie-based session
+//  2. Verify the user has an active admin_roles row
+//  3. Verify app_metadata.must_change_password === true (guard: cannot be called freely)
+//  4. Validate password strength server-side
+//  5. Update the Auth password via auth.admin.updateUserById
+//  6. Only on success: clear app_metadata.must_change_password
+//  7. Only on success: write password_initialized audit event
+//  8. Return { ok: true } — the password itself is never returned, logged, or stored
+//
+// If the password update fails, the flag is NOT cleared and NO audit event is written.
+
+export async function initializeAdminPassword(newPassword: string): Promise<ActionResult> {
+  // 1. Obtain authenticated user server-side — cannot be spoofed from the browser
+  const supabase = await createClient()
+  const { data: { user }, error: sessionErr } = await supabase.auth.getUser()
+
+  if (sessionErr || !user) {
+    return { ok: false, error: 'Relace vypršela. Přihlaste se znovu.' }
+  }
+
+  // 2. Verify active admin_roles row
+  const admin = createServiceRoleClient()
+  const { data: roleRow } = await admin
+    .from('admin_roles')
+    .select('active')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!roleRow?.active) {
+    return { ok: false, error: 'Účet není aktivní.' }
+  }
+
+  // 3. Verify the flag is actually set — this action cannot be used as a free
+  //    password-change endpoint; it is only valid for first-login initialization
+  const mustChange =
+    (user.app_metadata as Record<string, unknown>)?.must_change_password === true
+  if (!mustChange) {
+    return {
+      ok: false,
+      error: 'Tato akce je určena pouze pro první přihlášení. Použijte standardní změnu hesla.',
+    }
+  }
+
+  // 4. Validate password strength server-side — never trust only client validation
+  const pw = newPassword
+  if (!pw || pw.length < 12) {
+    return { ok: false, error: 'Heslo musí mít alespoň 12 znaků.' }
+  }
+  if (!/[A-Z]/.test(pw)) return { ok: false, error: 'Heslo musí obsahovat velké písmeno.' }
+  if (!/[a-z]/.test(pw)) return { ok: false, error: 'Heslo musí obsahovat malé písmeno.' }
+  if (!/[0-9]/.test(pw)) return { ok: false, error: 'Heslo musí obsahovat číslo.' }
+  if (!/[^A-Za-z0-9]/.test(pw)) {
+    return { ok: false, error: 'Heslo musí obsahovat speciální znak.' }
+  }
+
+  // 5. Update the password via Admin API — service-role only, never exposed to browser.
+  //    We use updateUserById so the operation is server-to-server, not reliant on the
+  //    client token having elevated permissions.
+  const { error: pwErr } = await admin.auth.admin.updateUserById(user.id, {
+    password: pw,
+    // Do NOT pass app_metadata here — update it only after this succeeds (step 6)
+  })
+
+  if (pwErr) {
+    console.error('[verde] initializeAdminPassword: password update failed', {
+      code: pwErr.code,
+      status: pwErr.status,
+      message: pwErr.message,
+      // password is intentionally omitted
+    })
+    return { ok: false, error: `Nastavení hesla se nezdařilo: ${pwErr.message}` }
+  }
+
+  // 6. Password update succeeded — NOW clear the flag.
+  //    If this fails (extremely unlikely), the user will be redirected back here
+  //    on next request, but their password has already been updated so they can
+  //    simply submit again and this action will reject at step 3 on the next call
+  //    once the flag is eventually cleared by a retry.
+  const { error: metaErr } = await admin.auth.admin.updateUserById(user.id, {
+    app_metadata: { must_change_password: false },
+  })
+
+  if (metaErr) {
+    // Non-fatal: flag may linger until a retry clears it, but the password has been set.
+    // Log the diagnostic but do not fail the user-visible flow.
+    console.error('[verde] initializeAdminPassword: flag clear failed (non-fatal)', {
+      code: metaErr.code,
+      message: metaErr.message,
+    })
+  }
+
+  // 7. Audit event — password value is intentionally absent from meta
+  await auditUserEvent(user.id, user.id, 'password_initialized', {
+    flag_cleared: !metaErr,
+  })
+
   return { ok: true }
 }
 
