@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { AppRole } from '@/lib/auth/roles'
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
@@ -153,6 +154,79 @@ export async function getAdminGallery() {
 export async function getAdminRoles() {
   const supabase = await createClient()
   return supabase.from('admin_roles').select('*, profiles(full_name, avatar_url)').order('created_at')
+}
+
+/**
+ * List ALL admin users — joins auth.users via the service-role client so RLS
+ * (admin_roles_select_self) does not filter out other users' rows.
+ *
+ * Returns a denormalised view: admin_roles fields + email + invite/auth state.
+ * Only call this from server-side code (Server Actions, Route Handlers, RSC).
+ */
+export async function getAdminUsersWithAuth(): Promise<AdminUserRow[]> {
+  const { createServiceRoleClient } = await import('@/lib/supabase/service-role')
+  const admin = createServiceRoleClient()
+
+  // Service-role bypasses RLS — fetches all rows
+  const { data: roles, error: rolesErr } = await admin
+    .from('admin_roles')
+    .select('user_id, role, full_name, active, created_at')
+    .order('created_at')
+
+  if (rolesErr || !roles?.length) return []
+
+  // Batch-fetch auth.users for the collected user_ids
+  const userIds = roles.map((r) => r.user_id)
+  const { data: { users: authUsers }, error: authErr } =
+    await admin.auth.admin.listUsers({ perPage: 1000 })
+
+  const authMap = new Map<string, AuthUserShape>()
+  if (!authErr && authUsers) {
+    for (const u of authUsers) {
+      if (userIds.includes(u.id)) {
+        authMap.set(u.id, {
+          email:        u.email ?? '',
+          invited_at:   u.invited_at ?? null,
+          confirmed_at: u.confirmed_at ?? null,
+          last_sign_in_at: u.last_sign_in_at ?? null,
+        })
+      }
+    }
+  }
+
+  return roles.map((r) => {
+    const auth = authMap.get(r.user_id)
+    return {
+      user_id:         r.user_id,
+      role:            r.role as AppRole,
+      full_name:       r.full_name ?? null,
+      active:          r.active,
+      created_at:      r.created_at,
+      email:           auth?.email ?? '',
+      invited_at:      auth?.invited_at ?? null,
+      confirmed_at:    auth?.confirmed_at ?? null,
+      last_sign_in_at: auth?.last_sign_in_at ?? null,
+    }
+  })
+}
+
+export interface AuthUserShape {
+  email: string
+  invited_at: string | null
+  confirmed_at: string | null
+  last_sign_in_at: string | null
+}
+
+export interface AdminUserRow {
+  user_id: string
+  role: AppRole
+  full_name: string | null
+  active: boolean
+  created_at: string
+  email: string
+  invited_at: string | null
+  confirmed_at: string | null
+  last_sign_in_at: string | null
 }
 
 // ─── Calendar / Capacity ──────────────────────────────────────────────────────
