@@ -9,19 +9,28 @@
  * Flow:
  *  1. User logs in with their temporary password.
  *  2. Protected layout detects must_change_password flag and redirects here.
- *  3. User sets a new password (min 12 chars, uppercase, lowercase, number, symbol).
- *  4. Client calls supabase.auth.updateUser({ password }).
- *  5. clearMustChangePassword() server action sets app_metadata.must_change_password = false.
+ *  3. User sets a new password satisfying strength requirements.
+ *  4. A single server action (initializeAdminPassword) is called — it:
+ *       a. verifies the session server-side
+ *       b. verifies the admin_roles row is active
+ *       c. verifies must_change_password === true (cannot be bypassed)
+ *       d. validates password strength server-side
+ *       e. calls auth.admin.updateUserById (service-role, never client-side)
+ *       f. only on success: clears the flag
+ *       g. writes audit event
+ *  5. Client refreshes the session to get the updated JWT metadata.
  *  6. User is redirected to /admin.
  *
- * Password is never logged or stored — it is only passed to the Supabase client
- * for the updateUser call and discarded.
+ * The password is typed in the browser, sent once over HTTPS to the server action,
+ * used immediately for the Supabase Admin API call, and then discarded. It is never
+ * returned from the server, never stored in DB, never written to audit_log, and
+ * cleared from React state when the component transitions to the success state.
  */
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { clearMustChangePassword } from '@/lib/admin/user-actions'
+import { initializeAdminPassword } from '@/lib/admin/user-actions'
 import '../../admin.css'
 
 // ─── Password strength checker ────────────────────────────────────────────────
@@ -95,29 +104,35 @@ export default function ChangePasswordPage() {
       return
     }
 
+    // Capture password into a local variable so we can clear React state before
+    // the async call resolves — the value lives in this closure only.
+    const captured = password
+
     start(async () => {
-      const supabase = createClient()
+      // Single atomic server action:
+      //  - verifies session + active role + must_change_password flag server-side
+      //  - validates strength server-side (cannot be bypassed by skipping client checks)
+      //  - calls auth.admin.updateUserById (service-role, never client-side key)
+      //  - clears the flag only after password update succeeds
+      //  - writes audit event
+      //  - does NOT return the password
+      const res = await initializeAdminPassword(captured)
 
-      // Verify active session
-      const { data: { user }, error: sessionErr } = await supabase.auth.getUser()
-      if (sessionErr || !user) {
-        setError('Relace vypršela. Přihlaste se znovu.')
-        return
-      }
-
-      // Set new password — NEVER log `password`
-      const { error: updateErr } = await supabase.auth.updateUser({ password })
-      if (updateErr) {
-        setError(`Chyba při nastavení hesla: ${updateErr.message}`)
-        return
-      }
-
-      // Clear must_change_password flag server-side
-      const res = await clearMustChangePassword()
       if (!res.ok) {
-        // Non-fatal: flag may linger, layout will redirect again, but user can still log in
-        console.error('[verde] clearMustChangePassword failed:', res.error)
+        setError(res.error ?? 'Nastavení hesla se nezdařilo.')
+        return
       }
+
+      // Clear passwords from React state immediately — they are no longer needed.
+      // After this point the values are unreachable from any component.
+      setPassword('')
+      setConfirm('')
+
+      // Refresh the session so the client JWT reflects must_change_password = false.
+      // Without this the protected layout would redirect back here on the next
+      // navigation because the stale token still contains the old app_metadata.
+      const supabase = createClient()
+      await supabase.auth.refreshSession()
 
       setDone(true)
       setTimeout(() => router.push('/admin'), 1200)

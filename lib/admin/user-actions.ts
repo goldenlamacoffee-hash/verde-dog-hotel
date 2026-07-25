@@ -32,19 +32,30 @@ function isValidRole(r: unknown): r is AppRole {
   return VALID_ROLES.includes(r as AppRole)
 }
 
-/** Write an audit_log entry for user-management events. */
+/**
+ * Write an audit_log entry for user-management events.
+ *
+ * The `action` column in audit_log is constrained to INSERT/UPDATE/DELETE.
+ * We map all user-management events to `action: 'UPDATE'` on the admin_roles
+ * table and store the semantic event name inside `new_data.event`.
+ * This keeps the event history queryable while respecting the DB constraint.
+ */
 async function auditUserEvent(
   actorId: string,
   targetUserId: string,
-  action: string,
+  event: string,
   meta: Record<string, unknown> = {},
 ) {
   const admin = createServiceRoleClient()
+  // Use INSERT for creation events, UPDATE for everything else
+  const action = (event === 'user_invited' || event === 'user_created_immediately')
+    ? 'INSERT'
+    : 'UPDATE'
   await admin.from('audit_log').insert({
     table_name: 'admin_roles',
-    record_id: targetUserId,
+    record_id:  targetUserId,
     action,
-    new_data: { actor_id: actorId, target_user_id: targetUserId, ...meta },
+    new_data: { event, actor_id: actorId, target_user_id: targetUserId, ...meta },
     changed_by: actorId,
   })
 }
@@ -627,24 +638,109 @@ export async function createAdminUserImmediately(payload: {
   return { ok: true, createdUserId: authUserId }
 }
 
-// ─── Clear must_change_password flag (called after first-login password set) ──
+// ─── Initialize password (first-login, atomic) ───────────────────────────────
+//
+// This is the ONLY path that clears the must_change_password flag.
+// clearMustChangePassword() does NOT exist as a standalone export —
+// the flag can only be cleared as a side-effect of a successful password update.
+//
+// Flow (all server-side, service-role key never leaves the server):
+//  1. Obtain the authenticated user from the cookie-based session
+//  2. Verify the user has an active admin_roles row
+//  3. Verify app_metadata.must_change_password === true (guard: cannot be called freely)
+//  4. Validate password strength server-side
+//  5. Update the Auth password via auth.admin.updateUserById
+//  6. Only on success: clear app_metadata.must_change_password
+//  7. Only on success: write password_initialized audit event
+//  8. Return { ok: true } — the password itself is never returned, logged, or stored
+//
+// If the password update fails, the flag is NOT cleared and NO audit event is written.
 
-export async function clearMustChangePassword(): Promise<ActionResult> {
+export async function initializeAdminPassword(newPassword: string): Promise<ActionResult> {
+  // 1. Obtain authenticated user server-side — cannot be spoofed from the browser
+  const supabase = await createClient()
+  const { data: { user }, error: sessionErr } = await supabase.auth.getUser()
+
+  if (sessionErr || !user) {
+    return { ok: false, error: 'Relace vypršela. Přihlaste se znovu.' }
+  }
+
+  // 2. Verify active admin_roles row
   const admin = createServiceRoleClient()
-  const caller = await getAdminProfile()
-  if (!caller) return { ok: false, error: 'Nepřihlášen.' }
+  const { data: roleRow } = await admin
+    .from('admin_roles')
+    .select('active')
+    .eq('user_id', user.id)
+    .single()
 
-  const { error } = await admin.auth.admin.updateUserById(caller.id, {
+  if (!roleRow?.active) {
+    return { ok: false, error: 'Účet není aktivní.' }
+  }
+
+  // 3. Verify the flag is actually set — this action cannot be used as a free
+  //    password-change endpoint; it is only valid for first-login initialization
+  const mustChange =
+    (user.app_metadata as Record<string, unknown>)?.must_change_password === true
+  if (!mustChange) {
+    return {
+      ok: false,
+      error: 'Tato akce je určena pouze pro první přihlášení. Použijte standardní změnu hesla.',
+    }
+  }
+
+  // 4. Validate password strength server-side — never trust only client validation
+  const pw = newPassword
+  if (!pw || pw.length < 12) {
+    return { ok: false, error: 'Heslo musí mít alespoň 12 znaků.' }
+  }
+  if (!/[A-Z]/.test(pw)) return { ok: false, error: 'Heslo musí obsahovat velké písmeno.' }
+  if (!/[a-z]/.test(pw)) return { ok: false, error: 'Heslo musí obsahovat malé písmeno.' }
+  if (!/[0-9]/.test(pw)) return { ok: false, error: 'Heslo musí obsahovat číslo.' }
+  if (!/[^A-Za-z0-9]/.test(pw)) {
+    return { ok: false, error: 'Heslo musí obsahovat speciální znak.' }
+  }
+
+  // 5. Update the password via Admin API — service-role only, never exposed to browser.
+  //    We use updateUserById so the operation is server-to-server, not reliant on the
+  //    client token having elevated permissions.
+  const { error: pwErr } = await admin.auth.admin.updateUserById(user.id, {
+    password: pw,
+    // Do NOT pass app_metadata here — update it only after this succeeds (step 6)
+  })
+
+  if (pwErr) {
+    console.error('[verde] initializeAdminPassword: password update failed', {
+      code: pwErr.code,
+      status: pwErr.status,
+      message: pwErr.message,
+      // password is intentionally omitted
+    })
+    return { ok: false, error: `Nastavení hesla se nezdařilo: ${pwErr.message}` }
+  }
+
+  // 6. Password update succeeded — NOW clear the flag.
+  //    If this fails (extremely unlikely), the user will be redirected back here
+  //    on next request, but their password has already been updated so they can
+  //    simply submit again and this action will reject at step 3 on the next call
+  //    once the flag is eventually cleared by a retry.
+  const { error: metaErr } = await admin.auth.admin.updateUserById(user.id, {
     app_metadata: { must_change_password: false },
   })
 
-  if (error) {
-    console.error('[verde] clearMustChangePassword error:', error.message)
-    return { ok: false, error: error.message }
+  if (metaErr) {
+    // Non-fatal: flag may linger until a retry clears it, but the password has been set.
+    // Log the diagnostic but do not fail the user-visible flow.
+    console.error('[verde] initializeAdminPassword: flag clear failed (non-fatal)', {
+      code: metaErr.code,
+      message: metaErr.message,
+    })
   }
 
-  await auditUserEvent(caller.id, caller.id, 'password_initialized', {})
-  REVALIDATE()
+  // 7. Audit event — password value is intentionally absent from meta
+  await auditUserEvent(user.id, user.id, 'password_initialized', {
+    flag_cleared: !metaErr,
+  })
+
   return { ok: true }
 }
 
