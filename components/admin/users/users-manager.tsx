@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useCallback } from 'react'
 import {
   inviteAdminUser,
+  createAdminUserImmediately,
   updateAdminUser,
   deactivateAdminUser,
   reactivateAdminUser,
@@ -61,6 +62,13 @@ function deriveStatus(row: AdminUserRow): { label: string; style: React.CSSPrope
     return {
       label: 'Neaktivní',
       style: { background: 'rgba(107,114,128,0.12)', color: '#6b7280' },
+    }
+  }
+  // Immediately created account awaiting first-login password change
+  if (row.must_change_password) {
+    return {
+      label: 'Musí změnit heslo',
+      style: { background: 'rgba(249,115,22,0.12)', color: '#c2410c' },
     }
   }
   return {
@@ -238,9 +246,218 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
 }
 
-// ─── Invite modal ─────────────────────────────────────────────────────────────
+// ─── Password generator + strength ───────────────────────────────────────────
 
-function InviteModal({
+const PW_CHARS = {
+  upper:  'ABCDEFGHJKLMNPQRSTUVWXYZ',
+  lower:  'abcdefghjkmnpqrstuvwxyz',
+  number: '23456789',
+  symbol: '!@#$%^&*-+=?',
+}
+
+function generateSecurePassword(length = 16): string {
+  const pools = [PW_CHARS.upper, PW_CHARS.lower, PW_CHARS.number, PW_CHARS.symbol]
+  // Guarantee at least one from each pool
+  const chars = pools.map((p) => p[Math.floor(Math.random() * p.length)])
+  const all = pools.join('')
+  for (let i = chars.length; i < length; i++) {
+    chars.push(all[Math.floor(Math.random() * all.length)])
+  }
+  // Fisher-Yates shuffle
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[chars[i], chars[j]] = [chars[j], chars[i]]
+  }
+  return chars.join('')
+}
+
+interface PwStrength {
+  score: number
+  checks: { length: boolean; upper: boolean; lower: boolean; number: boolean; symbol: boolean }
+}
+
+function pwStrength(pw: string): PwStrength {
+  const checks = {
+    length: pw.length >= 12,
+    upper:  /[A-Z]/.test(pw),
+    lower:  /[a-z]/.test(pw),
+    number: /[0-9]/.test(pw),
+    symbol: /[^A-Za-z0-9]/.test(pw),
+  }
+  return { score: Object.values(checks).filter(Boolean).length, checks }
+}
+
+const PW_STRENGTH_COLORS = ['#ef4444', '#f97316', '#f97316', '#22c55e', '#16a34a']
+const PW_STRENGTH_LABELS = ['Slabé', 'Slabé', 'Střední', 'Dobré', 'Silné']
+
+function PasswordField({
+  value,
+  onChange,
+  onGenerate,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onGenerate: () => void
+}) {
+  const [show, setShow] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const str = pwStrength(value)
+
+  function copy() {
+    if (!value) return
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    })
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type={show ? 'text' : 'password'}
+            required
+            autoComplete="new-password"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            style={{ ...inputStyle, paddingRight: '4.5rem', fontFamily: show ? 'monospace' : undefined }}
+            placeholder="Zadejte nebo vygenerujte heslo"
+          />
+          <button
+            type="button"
+            onClick={() => setShow((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs opacity-50 hover:opacity-100 px-1"
+            style={{ color: 'var(--admin-text)' }}
+            tabIndex={-1}
+          >
+            {show ? 'Skrýt' : 'Zobrazit'}
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={copy}
+          title="Kopírovat heslo"
+          disabled={!value}
+          className="rounded-lg px-2.5 text-xs font-medium transition-opacity disabled:opacity-30 shrink-0"
+          style={{ border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)', background: 'transparent' }}
+        >
+          {copied ? 'Zkopírováno' : 'Kopírovat'}
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={onGenerate}
+        className="text-xs font-medium transition-opacity hover:opacity-80"
+        style={{ color: 'var(--admin-accent)' }}
+      >
+        Vygenerovat bezpečné heslo
+      </button>
+      {value.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex gap-0.5 h-1">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="flex-1 rounded-full"
+                style={{
+                  background: i < str.score ? PW_STRENGTH_COLORS[str.score - 1] : 'var(--admin-card-border)',
+                }}
+              />
+            ))}
+          </div>
+          <p className="text-xs" style={{ color: PW_STRENGTH_COLORS[str.score - 1] ?? 'var(--admin-text-muted)' }}>
+            {PW_STRENGTH_LABELS[str.score] ?? ''}
+          </p>
+          <ul className="text-xs space-y-0.5">
+            {([
+              ['length', 'Alespoň 12 znaků'],
+              ['upper',  'Velké písmeno'],
+              ['lower',  'Malé písmeno'],
+              ['number', 'Číslo'],
+              ['symbol', 'Speciální znak'],
+            ] as [keyof PwStrength['checks'], string][]).map(([key, label]) => (
+              <li key={key} style={{ color: str.checks[key] ? '#16a34a' : 'var(--admin-text-muted)' }}>
+                {str.checks[key] ? '✓' : '○'} {label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── One-time success display (immediate creation) ────────────────────────────
+
+function ImmediateSuccessView({
+  email,
+  role,
+  fullName,
+  password,
+  onClose,
+}: {
+  email: string
+  role: AppRole
+  fullName: string
+  password: string
+  onClose: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  function copyCredentials() {
+    const text = `Přihlašovací údaje do administrace VERDE\n\nJméno: ${fullName}\nE-mail: ${email}\nDočasné heslo: ${password}\nURL: ${window.location.origin}/admin/login\n\nHeslo je dočasné — po prvním přihlášení bude vyžadována změna.`
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div
+        className="rounded-xl p-4 space-y-2"
+        style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)' }}
+      >
+        <p className="text-sm font-medium" style={{ color: '#059669' }}>
+          Uživatel byl vytvořen.
+        </p>
+        <div className="text-xs space-y-1" style={{ color: 'var(--admin-text)' }}>
+          <div><span style={{ color: 'var(--admin-text-muted)' }}>Jméno:</span> {fullName}</div>
+          <div><span style={{ color: 'var(--admin-text-muted)' }}>E-mail:</span> {email}</div>
+          <div><span style={{ color: 'var(--admin-text-muted)' }}>Role:</span> {ROLE_LABELS[role] ?? role}</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ color: 'var(--admin-text-muted)' }}>Heslo:</span>
+            <code
+              className="rounded px-1.5 py-0.5 font-mono text-xs tracking-wider select-all"
+              style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)' }}
+            >
+              {password}
+            </code>
+          </div>
+        </div>
+      </div>
+      <div
+        className="rounded-xl p-3 text-xs"
+        style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', color: '#a16207' }}
+      >
+        Dočasné heslo se po zavření tohoto okna již nezobrazí. Předejte jej uživateli bezpečným způsobem.
+      </div>
+      <div className="flex gap-3 justify-end">
+        <GhostBtn onClick={copyCredentials}>
+          {copied ? 'Zkopírováno' : 'Kopírovat přihlašovací údaje'}
+        </GhostBtn>
+        <AdminBtn onClick={onClose}>Zavřít</AdminBtn>
+      </div>
+    </div>
+  )
+}
+
+// ─── Add user modal (immediate + invite) ─────────────────────────────────────
+
+type AddMethod = 'immediate' | 'invite'
+
+function AddUserModal({
   open,
   onClose,
   callerRole,
@@ -251,32 +468,99 @@ function InviteModal({
 }) {
   const [pending, start] = useTransition()
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
+  const [method, setMethod] = useState<AddMethod>('immediate')
+
+  // Shared fields
+  const [firstName, setFirstName] = useState('')
+  const [lastName,  setLastName]  = useState('')
+  const [email,     setEmail]     = useState('')
+  const [role,      setRole]      = useState<AppRole>('staff')
+
+  // Immediate-creation fields
+  const [password, setPassword] = useState('')
+
+  // Success state (immediate only — shows once then gone)
+  const [successData, setSuccessData] = useState<{
+    email: string; role: AppRole; fullName: string; password: string
+  } | null>(null)
+
+  // Invite-only success
+  const [inviteSent, setInviteSent] = useState(false)
+
+  // Rate-limit fallback flag
+  const [rateLimited, setRateLimited] = useState(false)
 
   const availableRoles = callerRole === 'owner' ? ROLES : ROLES.filter((r) => r.value !== 'owner')
 
+  const generatePw = useCallback(() => setPassword(generateSecurePassword()), [])
+
   function handleClose() {
     setError('')
-    setSuccess(false)
+    setSuccessData(null)
+    setInviteSent(false)
+    setRateLimited(false)
+    setFirstName('')
+    setLastName('')
+    setEmail('')
+    setRole('staff')
+    setPassword('')
+    setMethod('immediate')
     onClose()
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const str = pwStrength(password)
+  const pwValid = Object.values(str.checks).every(Boolean)
+
+  async function handleSubmitImmediate(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    const fd = new FormData(e.currentTarget)
-    const payload = {
-      first_name: fd.get('first_name') as string,
-      last_name: fd.get('last_name') as string,
-      email: fd.get('email') as string,
-      role: fd.get('role') as string,
-      message: fd.get('message') as string | undefined,
+    if (!pwValid) {
+      setError('Heslo nesplňuje požadavky na bezpečnost.')
+      return
     }
+    const capturedPw = password // capture before reset
     start(async () => {
-      const res = await inviteAdminUser(payload)
+      const res = await createAdminUserImmediately({
+        first_name: firstName.trim(),
+        last_name:  lastName.trim(),
+        email,
+        role,
+        temporary_password: capturedPw,
+      })
       if (res.ok) {
-        setSuccess(true)
+        setSuccessData({
+          email,
+          role,
+          fullName: `${firstName.trim()} ${lastName.trim()}`.trim(),
+          password: capturedPw,
+        })
       } else {
+        setError(res.error ?? 'Chyba.')
+      }
+    })
+  }
+
+  async function handleSubmitInvite(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setRateLimited(false)
+    start(async () => {
+      const res = await inviteAdminUser({
+        first_name: firstName.trim(),
+        last_name:  lastName.trim(),
+        email,
+        role,
+      })
+      if (res.ok) {
+        setInviteSent(true)
+      } else {
+        // Detect rate-limit to show fallback button
+        if (
+          res.error?.toLowerCase().includes('rate limit') ||
+          res.error?.toLowerCase().includes('limit odesílání')
+        ) {
+          setRateLimited(true)
+        }
         setError(res.error ?? 'Chyba.')
       }
     })
@@ -284,63 +568,163 @@ function InviteModal({
 
   return (
     <Modal open={open} onClose={handleClose} title="Přidat uživatele">
-      {success ? (
+      {/* Success screens */}
+      {successData && (
+        <ImmediateSuccessView
+          email={successData.email}
+          role={successData.role}
+          fullName={successData.fullName}
+          password={successData.password}
+          onClose={handleClose}
+        />
+      )}
+      {!successData && inviteSent && (
         <div className="text-center py-4 space-y-4">
           <p className="text-sm" style={{ color: 'var(--admin-success, #059669)' }}>
-            Pozvánka byla odeslána. Uživatel dostane e-mail s odkazem pro nastavení přístupu.
+            Pozvánka byla odeslána na adresu <strong>{email}</strong>.
           </p>
           <AdminBtn onClick={handleClose}>Zavřít</AdminBtn>
         </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex gap-3">
-            <FieldRow label="Jméno">
-              <input name="first_name" required style={inputStyle} placeholder="Jana" />
-            </FieldRow>
-            <FieldRow label="Příjmení">
-              <input name="last_name" required style={inputStyle} placeholder="Nováková" />
-            </FieldRow>
+      )}
+      {!successData && !inviteSent && (
+        <>
+          {/* Method toggle */}
+          <div
+            className="flex rounded-xl p-1 mb-5 gap-1"
+            style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)' }}
+            role="group"
+            aria-label="Způsob vytvoření účtu"
+          >
+            {([
+              { value: 'immediate', label: 'Vytvořit účet ihned' },
+              { value: 'invite',    label: 'Poslat pozvánku e-mailem' },
+            ] as { value: AddMethod; label: string }[]).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { setMethod(opt.value); setError(''); setRateLimited(false) }}
+                className="flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-all"
+                style={
+                  method === opt.value
+                    ? { background: 'var(--admin-accent)', color: 'var(--admin-accent-foreground, #fff)' }
+                    : { background: 'transparent', color: 'var(--admin-text-muted)' }
+                }
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
-          <FieldRow label="E-mail">
-            <input
-              name="email"
-              type="email"
-              required
-              style={inputStyle}
-              placeholder="jana@example.cz"
-            />
-          </FieldRow>
-          <FieldRow label="Role">
-            <select name="role" defaultValue="staff" style={inputStyle}>
-              {availableRoles.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </FieldRow>
-          <FieldRow label="Osobní zpráva (volitelné)">
-            <textarea
-              name="message"
-              rows={2}
-              style={{ ...inputStyle, resize: 'vertical' }}
-              placeholder="Vítám tě v týmu VERDE..."
-            />
-          </FieldRow>
-          {error && (
-            <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}>
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-3 pt-1">
-            <GhostBtn onClick={handleClose} disabled={pending}>
-              Zrušit
-            </GhostBtn>
-            <AdminBtn type="submit" disabled={pending}>
-              {pending ? 'Odesílání...' : 'Odeslat pozvánku'}
-            </AdminBtn>
+
+          {/* ── Shared name + email + role fields ── */}
+          <div className="space-y-4">
+            <div className="flex gap-3">
+              <FieldRow label="Jméno">
+                <input
+                  required
+                  style={inputStyle}
+                  placeholder="Jana"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                />
+              </FieldRow>
+              <FieldRow label="Příjmení">
+                <input
+                  required
+                  style={inputStyle}
+                  placeholder="Nováková"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                />
+              </FieldRow>
+            </div>
+            <FieldRow label="E-mail">
+              <input
+                type="email"
+                required
+                style={inputStyle}
+                placeholder="jana@example.cz"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </FieldRow>
+            <FieldRow label="Role">
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as AppRole)}
+                style={inputStyle}
+              >
+                {availableRoles.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+            </FieldRow>
+
+            {/* ── Immediate: password field ── */}
+            {method === 'immediate' && (
+              <form onSubmit={handleSubmitImmediate}>
+                <FieldRow label="Dočasné heslo">
+                  <PasswordField
+                    value={password}
+                    onChange={setPassword}
+                    onGenerate={generatePw}
+                  />
+                </FieldRow>
+                {error && (
+                  <p
+                    className="mt-3 text-xs rounded-lg px-3 py-2"
+                    style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}
+                  >
+                    {error}
+                  </p>
+                )}
+                <div className="flex justify-end gap-3 pt-4">
+                  <GhostBtn onClick={handleClose} disabled={pending}>Zrušit</GhostBtn>
+                  <AdminBtn type="submit" disabled={pending || !pwValid}>
+                    {pending ? 'Vytváření...' : 'Vytvořit účet'}
+                  </AdminBtn>
+                </div>
+              </form>
+            )}
+
+            {/* ── Invite: SMTP notice + submit ── */}
+            {method === 'invite' && (
+              <form onSubmit={handleSubmitInvite}>
+                <div
+                  className="rounded-xl px-3 py-2.5 text-xs"
+                  style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)', color: 'var(--admin-text-muted)' }}
+                >
+                  Pro spolehlivé odesílání pozvánek je nutné vlastní SMTP v nastavení Supabase projektu.
+                </div>
+                {error && (
+                  <div className="mt-3 space-y-2">
+                    <p
+                      className="text-xs rounded-lg px-3 py-2"
+                      style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}
+                    >
+                      {error}
+                    </p>
+                    {rateLimited && (
+                      <button
+                        type="button"
+                        onClick={() => { setMethod('immediate'); setError(''); setRateLimited(false) }}
+                        className="text-xs font-medium transition-opacity hover:opacity-80 underline"
+                        style={{ color: 'var(--admin-accent)' }}
+                      >
+                        Vytvořit účet bez e-mailu →
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div className="flex justify-end gap-3 pt-4">
+                  <GhostBtn onClick={handleClose} disabled={pending}>Zrušit</GhostBtn>
+                  <AdminBtn type="submit" disabled={pending}>
+                    {pending ? 'Odesílání...' : 'Odeslat pozvánku'}
+                  </AdminBtn>
+                </div>
+              </form>
+            )}
           </div>
-        </form>
+        </>
       )}
     </Modal>
   )
@@ -871,7 +1255,7 @@ export function UsersManager({
       </div>
 
       {/* Modals */}
-      <InviteModal
+      <AddUserModal
         open={showInvite}
         onClose={() => setShowInvite(false)}
         callerRole={callerRole}

@@ -189,6 +189,8 @@ export async function getAdminUsersWithAuth(): Promise<AdminUserRow[]> {
           invited_at:   u.invited_at ?? null,
           confirmed_at: u.confirmed_at ?? null,
           last_sign_in_at: u.last_sign_in_at ?? null,
+          must_change_password:
+            (u.app_metadata as Record<string, unknown>)?.must_change_password === true,
         })
       }
     }
@@ -197,15 +199,16 @@ export async function getAdminUsersWithAuth(): Promise<AdminUserRow[]> {
   return roles.map((r) => {
     const auth = authMap.get(r.user_id)
     return {
-      user_id:         r.user_id,
-      role:            r.role as AppRole,
-      full_name:       r.full_name ?? null,
-      active:          r.active,
-      created_at:      r.created_at,
-      email:           auth?.email ?? '',
-      invited_at:      auth?.invited_at ?? null,
-      confirmed_at:    auth?.confirmed_at ?? null,
-      last_sign_in_at: auth?.last_sign_in_at ?? null,
+      user_id:              r.user_id,
+      role:                 r.role as AppRole,
+      full_name:            r.full_name ?? null,
+      active:               r.active,
+      created_at:           r.created_at,
+      email:                auth?.email ?? '',
+      invited_at:           auth?.invited_at ?? null,
+      confirmed_at:         auth?.confirmed_at ?? null,
+      last_sign_in_at:      auth?.last_sign_in_at ?? null,
+      must_change_password: auth?.must_change_password ?? false,
     }
   })
 }
@@ -215,6 +218,7 @@ export interface AuthUserShape {
   invited_at: string | null
   confirmed_at: string | null
   last_sign_in_at: string | null
+  must_change_password: boolean
 }
 
 export interface AdminUserRow {
@@ -227,6 +231,8 @@ export interface AdminUserRow {
   invited_at: string | null
   confirmed_at: string | null
   last_sign_in_at: string | null
+  /** Sourced from auth.users.app_metadata.must_change_password */
+  must_change_password: boolean
 }
 
 // ─── Calendar / Capacity ──────────────────────────────────────────────────────

@@ -488,6 +488,166 @@ export async function resendInvitation(user_id: string): Promise<ActionResult> {
   return { ok: true }
 }
 
+// ─── Create account immediately (no email) ───────────────────────────────────
+
+export interface CreateImmediateResult {
+  ok: boolean
+  error?: string
+  /** Only populated on success — never persisted or logged */
+  createdUserId?: string
+}
+
+export async function createAdminUserImmediately(payload: {
+  first_name: string
+  last_name: string
+  email: string
+  role: string
+  temporary_password: string
+}): Promise<CreateImmediateResult> {
+  // 1. Verify caller
+  const caller = await getAdminProfile()
+  if (!caller) return { ok: false, error: 'Nepřihlášen.' }
+  if (!canManageUsers(caller.role)) {
+    return { ok: false, error: 'Nemáte oprávnění spravovat uživatele.' }
+  }
+
+  // 2. Validate inputs
+  const email = payload.email.trim().toLowerCase()
+  const role = payload.role as AppRole
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, error: 'Neplatný e-mail.' }
+  }
+  if (!isValidRole(role)) {
+    return { ok: false, error: 'Neplatná role.' }
+  }
+  if (role === 'owner' && caller.role !== 'owner') {
+    return { ok: false, error: 'Roli vlastníka může přiřadit pouze jiný vlastník.' }
+  }
+
+  const pw = payload.temporary_password
+  if (!pw || pw.length < 12) {
+    return { ok: false, error: 'Dočasné heslo musí mít alespoň 12 znaků.' }
+  }
+  const pwChecks = [/[A-Z]/, /[a-z]/, /[0-9]/, /[^A-Za-z0-9]/]
+  if (!pwChecks.every((re) => re.test(pw))) {
+    return {
+      ok: false,
+      error: 'Heslo musí obsahovat velké písmeno, malé písmeno, číslo a speciální znak.',
+    }
+  }
+
+  const full_name = `${payload.first_name.trim()} ${payload.last_name.trim()}`.trim()
+  const admin = createServiceRoleClient()
+
+  // 3. Check for duplicate email
+  const { data: { users: existing } } = await admin.auth.admin.listUsers({ perPage: 1000 })
+  const existingUser = existing?.find((u) => u.email?.toLowerCase() === email)
+
+  if (existingUser) {
+    const { data: existingRole } = await admin
+      .from('admin_roles')
+      .select('user_id, role, active')
+      .eq('user_id', existingUser.id)
+      .single()
+
+    if (existingRole) {
+      return {
+        ok: false,
+        error: `Uživatel s tímto e-mailem již má přístup do administrace (role: ${ROLE_LABELS[existingRole.role as AppRole] ?? existingRole.role}).`,
+      }
+    }
+    // Existing Auth user without admin role — not supported in immediate creation
+    // (they already have a password; use invite flow to grant access)
+    return {
+      ok: false,
+      error:
+        'E-mail je již registrován v systému. Pro přidání administrátorského přístupu k existujícímu účtu použijte pozvánku.',
+    }
+  }
+
+  // 4. Create Auth user immediately — no email sent, email_confirm: true
+  const { data: createData, error: createErr } = await admin.auth.admin.createUser({
+    email,
+    password: pw,
+    email_confirm: true,
+    app_metadata: { must_change_password: true },
+    user_metadata: {
+      first_name: payload.first_name.trim(),
+      last_name: payload.last_name.trim(),
+      full_name,
+    },
+  })
+
+  if (createErr || !createData?.user) {
+    console.error('[verde] createUser error', {
+      code:    createErr?.code,
+      status:  createErr?.status,
+      message: createErr?.message,
+    })
+    return { ok: false, error: createErr?.message ?? 'Vytvoření účtu se nezdařilo.' }
+  }
+
+  const authUserId = createData.user.id
+
+  // 5. Upsert profile
+  const { error: profileErr } = await admin
+    .from('profiles')
+    .upsert({ id: authUserId, full_name }, { onConflict: 'id' })
+
+  if (profileErr) {
+    console.error('[verde] profile upsert failed after createUser:', profileErr.message)
+    // Cleanup Auth user to avoid orphan
+    await admin.auth.admin.deleteUser(authUserId).catch(() => {})
+    return { ok: false, error: 'Profil se nepodařilo vytvořit. Účet byl odstraněn.' }
+  }
+
+  // 6. Insert admin_roles
+  const { error: roleErr } = await admin.from('admin_roles').insert({
+    user_id: authUserId,
+    role,
+    full_name,
+    active: true,
+  })
+
+  if (roleErr) {
+    await admin.auth.admin.deleteUser(authUserId).catch(() => {})
+    await admin.from('profiles').delete().eq('id', authUserId)
+    return { ok: false, error: `Přiřazení role selhalo: ${roleErr.message}` }
+  }
+
+  // 7. Audit — do NOT log the password
+  await auditUserEvent(caller.id, authUserId, 'user_created_immediately', {
+    email,
+    role,
+    full_name,
+  })
+
+  REVALIDATE()
+  return { ok: true, createdUserId: authUserId }
+}
+
+// ─── Clear must_change_password flag (called after first-login password set) ──
+
+export async function clearMustChangePassword(): Promise<ActionResult> {
+  const admin = createServiceRoleClient()
+  const caller = await getAdminProfile()
+  if (!caller) return { ok: false, error: 'Nepřihlášen.' }
+
+  const { error } = await admin.auth.admin.updateUserById(caller.id, {
+    app_metadata: { must_change_password: false },
+  })
+
+  if (error) {
+    console.error('[verde] clearMustChangePassword error:', error.message)
+    return { ok: false, error: error.message }
+  }
+
+  await auditUserEvent(caller.id, caller.id, 'password_initialized', {})
+  REVALIDATE()
+  return { ok: true }
+}
+
 // ─── Cancel invitation (deactivate pending user) ─────────────────────────────
 
 export async function cancelInvitation(user_id: string): Promise<ActionResult> {
