@@ -10,7 +10,7 @@ interface StepNavProps {
 
 export function StepNav({ onNext, onBack, nextLabel = 'Pokračovat', disabledNext = false }: StepNavProps) {
   return (
-    <div className="mt-10 flex flex-col-reverse gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mt-5 flex flex-col-reverse gap-3 border-t border-border pt-5 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:pt-6">
       {onBack ? (
         <button
           type="button"
