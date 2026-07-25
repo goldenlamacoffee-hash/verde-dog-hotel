@@ -1,26 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { navigation as staticNavigation } from '@/content/site'
 import { Logo } from '@/components/brand/logo'
 import { CtaLink } from '@/components/common/cta-button'
 import { MobileNav } from './mobile-nav'
-
-/**
- * Returns a fresh reservation URL.
- * When already on /rezervace a ?new=<token> param forces the router to
- * treat it as a new navigation and ReservationFlow detects the changed
- * param to call restart(). From any other page it is a plain navigation.
- */
-function reservationHref(pathname: string): string {
-  if (pathname.startsWith('/rezervace')) {
-    return `/rezervace?new=${Date.now()}`
-  }
-  return '/rezervace'
-}
 
 interface NavItem { label: string; href: string }
 
@@ -38,7 +25,19 @@ interface Props {
 export function SiteHeader({ navItems, ctaLabel, darkLogoSrc, lightLogoSrc }: Props) {
   const navigation = navItems ?? staticNavigation
   const pathname = usePathname()
+  const router = useRouter()
   const [scrolled, setScrolled] = useState(false)
+
+  // When already on /rezervace, clicking the CTA would be a same-URL no-op.
+  // Instead push a ?new=<token> param imperatively on click — Date.now() runs
+  // only in the event handler, never during render, so there is no hydration
+  // mismatch between server and client.
+  function handleCtaClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (pathname.startsWith('/rezervace')) {
+      e.preventDefault()
+      router.push(`/rezervace?new=${Date.now()}`)
+    }
+  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40)
@@ -103,10 +102,11 @@ export function SiteHeader({ navItems, ctaLabel, darkLogoSrc, lightLogoSrc }: Pr
 
         <div className="flex items-center gap-2">
           <CtaLink
-            href={reservationHref(pathname)}
+            href="/rezervace"
             size="md"
             variant={solid ? 'primary' : 'light'}
             className="hidden sm:inline-flex"
+            onClick={handleCtaClick}
           >
             {ctaLabel ?? 'Rezervovat pobyt'}
           </CtaLink>

@@ -52,6 +52,12 @@ export interface AvailabilityCalendarProps {
   onRangeChange?: (arrival: string, departure: string) => void
   /** CMS-configured colors — falls back to VERDE defaults when omitted. */
   appearance?: CalendarAppearance
+  /**
+   * Optional maximum stay length from CMS (occupied nights).
+   * null = no maximum. Positive integer = departure dates producing more nights
+   * than this value are disabled and cannot be selected.
+   */
+  maximumStayNights?: number | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -224,6 +230,8 @@ interface MonthGridProps {
   occupancy: OccupancyMap
   blockingNight: string | null
   appearance: CalendarAppearance
+  /** Optional CMS maximum stay length — dates exceeding it are disabled. */
+  maximumStayNights: number | null
   onDayClick: (dateStr: string) => void
   onDayHover: (dateStr: string | null) => void
 }
@@ -233,6 +241,7 @@ function MonthGrid({
   arrival, departure, hoverDate,
   selectingDeparture, occupancy, blockingNight,
   appearance,
+  maximumStayNights,
   onDayClick, onDayHover,
 }: MonthGridProps) {
   const daysInMonth = new Date(year, month, 0).getDate()
@@ -271,7 +280,19 @@ function MonthGrid({
           const isValidDeparture =
             selectingDeparture && dateStr > arrival && isFull
 
-          const isDisabled = isPast || (isFull && !isValidDeparture)
+          // Maximum stay: if a maximum is configured and we're selecting
+          // departure, disable any date that would produce more nights than
+          // the limit (departure - arrival, in days). The arrival date itself
+          // is never affected.
+          const exceedsMaxStay = Boolean(
+            maximumStayNights !== null &&
+            maximumStayNights >= 1 &&
+            arrival &&
+            dateStr > arrival &&
+            nightsBetween(arrival, dateStr) > maximumStayNights
+          )
+
+          const isDisabled = isPast || (isFull && !isValidDeparture) || exceedsMaxStay
 
           const isHoverDep =
             selectingDeparture && hoverDate === dateStr && dateStr > arrival && !departure
@@ -493,6 +514,7 @@ export function AvailabilityCalendar({
   onDepartureChange,
   onRangeChange,
   appearance: appearanceProp,
+  maximumStayNights = null,
 }: AvailabilityCalendarProps) {
   const appearance = appearanceProp ?? CALENDAR_APPEARANCE_DEFAULTS
 
@@ -603,6 +625,7 @@ export function AvailabilityCalendar({
     occupancy,
     blockingNight,
     appearance,
+    maximumStayNights,
     onDayClick: handleDayClick,
     onDayHover: setHoverDate,
   }
@@ -629,10 +652,21 @@ export function AvailabilityCalendar({
       </div>
 
       {/* ── Range / hint strip ── */}
+      {/* Maximum-stay limit banner — shown below date fields when configured */}
+      {maximumStayNights !== null && maximumStayNights >= 1 && (
+        <p className="text-xs text-verde-stone px-0.5" aria-live="polite">
+          Maximální délka pobytu je{' '}
+          <span className="font-semibold text-verde-deep">{maximumStayNights} {pluralNoc(maximumStayNights)}</span>.
+        </p>
+      )}
       <div className="flex min-h-[28px] items-center justify-between gap-2 px-0.5">
         {blockingNight ? (
           <p className="text-xs font-medium text-destructive" role="alert">
             Zvolený pobyt není dostupný po celý termín.
+          </p>
+        ) : arrival && departure && !blockingNight && maximumStayNights !== null && nights > maximumStayNights ? (
+          <p className="text-xs font-medium text-destructive" role="alert">
+            Maximální délka pobytu je {maximumStayNights} {pluralNoc(maximumStayNights)}.
           </p>
         ) : arrival && departure && !blockingNight ? (
           <p className="flex items-center gap-1.5 text-xs text-verde-moss">

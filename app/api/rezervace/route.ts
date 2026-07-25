@@ -143,8 +143,32 @@ export async function POST(req: NextRequest) {
   const nights = Math.round(
     (departureDate.getTime() - arrivalDate.getTime()) / 86_400_000
   )
-  if (nights > 30) {
-    return NextResponse.json({ error: 'Maximální délka pobytu je 30 nocí.' }, { status: 422 })
+
+  // Load the optional maximum-stay setting from CMS.
+  // null / missing / 0 → no maximum enforced.
+  // Positive integer   → reject stays longer than this value.
+  {
+    const supabaseForSettings = createServiceRoleClient()
+    const { data: maxStaySetting } = await supabaseForSettings
+      .from('site_settings')
+      .select('value')
+      .eq('key', 'maximumStayNights')
+      .maybeSingle()
+    const rawNights = (maxStaySetting?.value as Record<string, unknown> | null)?.nights
+    const maxStayNights =
+      typeof rawNights === 'number' && Number.isInteger(rawNights) && rawNights >= 1
+        ? rawNights
+        : null
+
+    if (maxStayNights !== null && nights > maxStayNights) {
+      return NextResponse.json(
+        {
+          error: `Maximální délka pobytu je ${maxStayNights} nocí.`,
+          code: 'MAXIMUM_STAY_EXCEEDED',
+        },
+        { status: 422 }
+      )
+    }
   }
 
   // 4. Build RPC payload — map form shape to DB shape
@@ -214,12 +238,22 @@ export async function POST(req: NextRequest) {
 
   if (rpcError) {
     const msg = rpcError.message ?? ''
-    // The RPC raises UNAVAILABLE: <reason> for capacity errors
+    // The RPC raises UNAVAILABLE: <reason> for capacity / closed-hotel errors.
     if (msg.includes('UNAVAILABLE:')) {
       const reason = msg.replace(/.*UNAVAILABLE:\s*/, '').trim()
       return NextResponse.json(
         { error: reason || 'Požadovaný termín není k dispozici.' },
         { status: 409 }
+      )
+    }
+    // The RPC raises MAXIMUM_STAY_EXCEEDED: <reason> when the stay exceeds the
+    // CMS-configured maximum length. Distinct from UNAVAILABLE so the client
+    // can display a specific message rather than a generic "not available" one.
+    if (msg.includes('MAXIMUM_STAY_EXCEEDED:')) {
+      const reason = msg.replace(/.*MAXIMUM_STAY_EXCEEDED:\s*/, '').trim()
+      return NextResponse.json(
+        { error: reason || 'Maximální délka pobytu byla překročena.', code: 'MAXIMUM_STAY_EXCEEDED' },
+        { status: 422 }
       )
     }
     console.error('[verde] create_reservation RPC error:', msg)

@@ -12,9 +12,11 @@ interface Props {
   onChange: (patch: Partial<ReservationDraft>) => void
   onNext: () => void
   calendarAppearance?: CalendarAppearance
+  /** Optional CMS-configured maximum stay (occupied nights). null = unlimited. */
+  maximumStayNights?: number | null
 }
 
-export function StepTerm({ draft, errors, estimate, onChange, onNext, calendarAppearance }: Props) {
+export function StepTerm({ draft, errors, estimate, onChange, onNext, calendarAppearance, maximumStayNights }: Props) {
   // Continue is only enabled when both dates are present and departure > arrival
   const canContinue =
     Boolean(draft.arrival) &&
@@ -48,6 +50,7 @@ export function StepTerm({ draft, errors, estimate, onChange, onNext, calendarAp
         onDepartureChange={(date) => onChange({ departure: date })}
         onRangeChange={(arrival, departure) => onChange({ arrival, departure })}
         appearance={calendarAppearance}
+        maximumStayNights={maximumStayNights ?? null}
       />
 
       <StepNav onNext={onNext} disabledNext={!canContinue} />

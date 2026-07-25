@@ -35,6 +35,45 @@ export function formatDate(value: string | Date | null | undefined): string {
   return dateFmt.format(d)
 }
 
+const adminDateTimeFmt = new Intl.DateTimeFormat('cs-CZ', {
+  timeZone: 'Europe/Prague',
+  day: 'numeric',
+  month: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+const adminDateTimeSecFmt = new Intl.DateTimeFormat('cs-CZ', {
+  timeZone: 'Europe/Prague',
+  day: 'numeric',
+  month: 'numeric',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
+
+/**
+ * Format a UTC timestamp for admin UI display.
+ *
+ * Converts to Europe/Prague (handles CET/CEST automatically via the IANA tz db).
+ * Returns Czech format: "24. 7. 2026, 14:37"
+ * Returns "—" for null / undefined / invalid values.
+ *
+ * @param value  ISO string, Date, null, or undefined
+ * @param opts.withSeconds  If true, returns full precision including seconds (for tooltips)
+ */
+export function formatAdminDateTime(
+  value: string | Date | null | undefined,
+  opts?: { withSeconds?: boolean },
+): string {
+  if (!value) return '—'
+  const d = typeof value === 'string' ? new Date(value) : value
+  if (Number.isNaN(d.getTime())) return '—'
+  return opts?.withSeconds ? adminDateTimeSecFmt.format(d) : adminDateTimeFmt.format(d)
+}
+
 /** Whole nights between two ISO date strings (Europe/Prague assumptions). */
 export function nightsBetween(
   arrival: string | null,

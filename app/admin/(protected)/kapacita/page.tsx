@@ -4,6 +4,7 @@ import { getOccupancyForRange } from '@/lib/capacity'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { CapacityOverridesPanel } from '@/components/admin/capacity/capacity-overrides-panel'
 import { CalendarAppearanceEditor } from '@/components/admin/capacity/calendar-appearance-editor'
+import { MaximumStayEditor } from '@/components/admin/capacity/maximum-stay-editor'
 import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
 import type { CalendarAppearance } from '@/lib/types'
 
@@ -62,14 +63,22 @@ export default async function CapacityPage() {
   const fromStr  = fmtDate(today)
   const toStr    = fmtDate(addDays(today, 30))
 
-  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance] = await Promise.all([
+  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance, rawMaxStay] = await Promise.all([
     getSiteSetting('capacity'),
     getCapacityOverrides(),
     getOccupancyForRange(fromStr, toStr),
     getSiteSetting('availabilityCalendarAppearance'),
+    getSiteSetting('maximumStayNights'),
   ])
 
   const calendarAppearance = resolveAppearance(rawAppearance)
+
+  // Resolve maximumStayNights: positive integer or null (unlimited).
+  const rawMaxNights = (rawMaxStay as Record<string, unknown> | null)?.nights
+  const maximumStayNights: number | null =
+    typeof rawMaxNights === 'number' && Number.isInteger(rawMaxNights) && rawMaxNights >= 1
+      ? rawMaxNights
+      : null
 
   const maxDogs: number =
     capacitySetting && typeof capacitySetting === 'object'
@@ -144,6 +153,24 @@ export default async function CapacityPage() {
             Nastavení kapacity pod tuto hodnotu zablokuje nové rezervace.
           </p>
         )}
+      </div>
+
+      {/* ── Maximum stay ────────────────────────────────────────────────────── */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
+      >
+        <h2
+          className="text-xs font-semibold uppercase tracking-wider mb-1"
+          style={{ color: 'var(--admin-text-muted)' }}
+        >
+          Maximální délka pobytu
+        </h2>
+        <p className="mb-5 text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+          Nechte vypnuto, pokud délka pobytu nemá být omezena. Po uložení se změna
+          projeví na veřejné stránce rezervace okamžitě — bez nasazení.
+        </p>
+        <MaximumStayEditor initialMaxNights={maximumStayNights} />
       </div>
 
       {/* ── 30-day occupancy table ──────────────────────────────────────────── */}

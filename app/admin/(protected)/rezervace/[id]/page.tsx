@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/admin/ui/status-badge'
 import { ReservationActions } from '@/components/admin/reservations/reservation-actions'
 import { PaymentsPanel } from '@/components/admin/reservations/payments-panel'
 import { DocumentsPanel } from '@/components/admin/reservations/documents-panel'
+import { formatAdminDateTime } from '@/lib/format'
 
 export default async function ReservationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -138,8 +139,16 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           </Section>
 
           <Section title="Systém">
-            <InfoRow label="Vytvořeno" value={new Date(res.created_at).toLocaleDateString('cs-CZ')} />
-            <InfoRow label="Aktualizováno" value={new Date(res.updated_at).toLocaleDateString('cs-CZ')} />
+            <InfoRowDateTime
+              label="Vytvořeno"
+              value={formatAdminDateTime(res.created_at)}
+              title={formatAdminDateTime(res.created_at, { withSeconds: true })}
+            />
+            <InfoRowDateTime
+              label="Aktualizováno"
+              value={formatAdminDateTime(res.updated_at)}
+              title={formatAdminDateTime(res.updated_at, { withSeconds: true })}
+            />
           </Section>
         </div>
       </div>
@@ -163,6 +172,22 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between items-baseline gap-4 py-1 text-sm" style={{ borderBottom: '1px solid var(--admin-card-border)' }}>
       <span style={{ color: 'var(--admin-text-muted)' }}>{label}</span>
       <span className="text-right font-medium" style={{ color: 'var(--admin-text)' }}>{value}</span>
+    </div>
+  )
+}
+
+/** Like InfoRow but accepts an optional tooltip (title) with full-precision timestamp. */
+function InfoRowDateTime({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div className="flex justify-between items-baseline gap-4 py-1 text-sm" style={{ borderBottom: '1px solid var(--admin-card-border)' }}>
+      <span style={{ color: 'var(--admin-text-muted)' }}>{label}</span>
+      <span
+        className="text-right font-medium tabular-nums"
+        style={{ color: 'var(--admin-text)', cursor: title ? 'help' : undefined }}
+        title={title}
+      >
+        {value}
+      </span>
     </div>
   )
 }

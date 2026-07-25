@@ -106,6 +106,26 @@ export async function getPublicCalendarAppearance(): Promise<CalendarAppearance>
   return result
 }
 
+// ─── Maximum stay ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns the configured maximum stay length (occupied nights), or null when
+ * no maximum is set.
+ *
+ * Stored under site_settings key `maximumStayNights` as `{ nights: number }`.
+ * null / missing / 0 → no maximum.
+ * Positive integer    → maximum allowed occupied nights.
+ */
+export async function getPublicMaximumStayNights(): Promise<number | null> {
+  const raw = await getPublicSiteSetting<Record<string, unknown>>('maximumStayNights')
+  if (!raw) return null
+  const nights = raw.nights
+  if (typeof nights === 'number' && Number.isInteger(nights) && nights >= 1) {
+    return nights
+  }
+  return null
+}
+
 // ─── Contact settings ─────────────────────────────────────────────────────────
 
 /**
@@ -206,7 +226,7 @@ export async function getPublicPriceItems(): Promise<PriceItem[]> {
   return staticPrices
 }
 
-// ─── Testimonials ─────────────────────────────────────────────────────────────
+// ─── Testimonials ───────────────────────────────────────────────────���─────────
 
 export async function getPublicTestimonials(): Promise<Testimonial[]> {
   try {
