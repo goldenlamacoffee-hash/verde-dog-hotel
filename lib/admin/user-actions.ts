@@ -60,6 +60,72 @@ async function countActiveOwners(): Promise<number> {
   return count ?? 0
 }
 
+/**
+ * Map a Supabase Auth error from inviteUserByEmail to a safe, user-facing
+ * Czech message.  We key on `error.code` first (stable), then fall back to
+ * a conservative message-substring check only for codes we don't recognise.
+ *
+ * Supabase Auth error codes reference:
+ * https://supabase.com/docs/reference/javascript/auth-error-codes
+ */
+function mapInviteError(err: { code?: string; status?: number; message?: string } | null): string {
+  const code    = err?.code    ?? ''
+  const status  = err?.status  ?? 0
+  const message = (err?.message ?? '').toLowerCase()
+
+  // Provider rejected the address as non-deliverable / invalid
+  if (
+    code === 'email_address_invalid' ||
+    message.includes('is invalid') ||
+    message.includes('invalid email')
+  ) {
+    return 'Zadanou e-mailovou adresu poskytovatel odmítl. Zkontrolujte adresu nebo použijte jinou.'
+  }
+
+  // Address not on the Supabase-allowed-senders list (default SMTP restriction)
+  if (
+    code === 'email_address_not_authorized' ||
+    message.includes('not authorized') ||
+    message.includes('not allowed')
+  ) {
+    return 'Supabase nemůže na tuto adresu odeslat pozvánku bez vlastního SMTP. Nastavte vlastní SMTP v Supabase nebo použijte jinou adresu.'
+  }
+
+  // Rate limiting
+  if (
+    code === 'over_email_send_rate_limit' ||
+    code === 'over_request_rate_limit' ||
+    status === 429 ||
+    message.includes('rate limit') ||
+    message.includes('too many')
+  ) {
+    return 'Byl překročen limit odesílání e-mailů. Zkuste to za chvíli znovu.'
+  }
+
+  // Duplicate user — should have been caught earlier, but defend in depth
+  if (
+    code === 'user_already_exists' ||
+    message.includes('already registered') ||
+    message.includes('already exists')
+  ) {
+    return 'Uživatel s touto e-mailovou adresou již existuje.'
+  }
+
+  // SMTP delivery / server configuration issues
+  if (
+    code === 'smtp_error' ||
+    message.includes('smtp') ||
+    message.includes('sending') ||
+    message.includes('could not send') ||
+    message.includes('failed to send')
+  ) {
+    return 'Pozvánku se nepodařilo odeslat kvůli nastavení e-mailového serveru. Ověřte SMTP konfiguraci v Supabase.'
+  }
+
+  // Fallback: return the raw message so admins can see what Supabase reported
+  return err?.message ?? 'Pozvánku se nepodařilo odeslat.'
+}
+
 // ─── Action results ───────────────────────────────────────────────────────────
 
 export interface ActionResult {
@@ -140,19 +206,13 @@ export async function inviteAdminUser(payload: {
       })
 
     if (inviteErr || !inviteData?.user) {
-      // Surface SMTP/email config issues clearly
-      const msg = inviteErr?.message ?? 'Pozvánka se nepodařila.'
-      if (
-        msg.toLowerCase().includes('smtp') ||
-        msg.toLowerCase().includes('email') ||
-        msg.toLowerCase().includes('sending')
-      ) {
-        return {
-          ok: false,
-          error: `Chyba konfigurace e-mailu: ${msg}. Ověřte nastavení SMTP v Supabase.`,
-        }
-      }
-      return { ok: false, error: msg }
+      // Log safe diagnostic fields only — never log tokens or secrets
+      console.error('[verde] inviteUserByEmail error', {
+        code:    inviteErr?.code,
+        status:  inviteErr?.status,
+        message: inviteErr?.message,
+      })
+      return { ok: false, error: mapInviteError(inviteErr) }
     }
 
     authUserId = inviteData.user.id
@@ -412,18 +472,12 @@ export async function resendInvitation(user_id: string): Promise<ActionResult> {
   )
 
   if (inviteErr) {
-    const msg = inviteErr.message
-    if (
-      msg.toLowerCase().includes('smtp') ||
-      msg.toLowerCase().includes('email') ||
-      msg.toLowerCase().includes('sending')
-    ) {
-      return {
-        ok: false,
-        error: `Chyba konfigurace e-mailu: ${msg}. Ověřte nastavení SMTP v Supabase.`,
-      }
-    }
-    return { ok: false, error: msg }
+    console.error('[verde] resendInvitation error', {
+      code:    inviteErr.code,
+      status:  inviteErr.status,
+      message: inviteErr.message,
+    })
+    return { ok: false, error: mapInviteError(inviteErr) }
   }
 
   await auditUserEvent(caller.id, user_id, 'invitation_resent', {
