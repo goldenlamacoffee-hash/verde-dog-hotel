@@ -238,12 +238,22 @@ export async function POST(req: NextRequest) {
 
   if (rpcError) {
     const msg = rpcError.message ?? ''
-    // The RPC raises UNAVAILABLE: <reason> for capacity errors
+    // The RPC raises UNAVAILABLE: <reason> for capacity / closed-hotel errors.
     if (msg.includes('UNAVAILABLE:')) {
       const reason = msg.replace(/.*UNAVAILABLE:\s*/, '').trim()
       return NextResponse.json(
         { error: reason || 'Požadovaný termín není k dispozici.' },
         { status: 409 }
+      )
+    }
+    // The RPC raises MAXIMUM_STAY_EXCEEDED: <reason> when the stay exceeds the
+    // CMS-configured maximum length. Distinct from UNAVAILABLE so the client
+    // can display a specific message rather than a generic "not available" one.
+    if (msg.includes('MAXIMUM_STAY_EXCEEDED:')) {
+      const reason = msg.replace(/.*MAXIMUM_STAY_EXCEEDED:\s*/, '').trim()
+      return NextResponse.json(
+        { error: reason || 'Maximální délka pobytu byla překročena.', code: 'MAXIMUM_STAY_EXCEEDED' },
+        { status: 422 }
       )
     }
     console.error('[verde] create_reservation RPC error:', msg)
