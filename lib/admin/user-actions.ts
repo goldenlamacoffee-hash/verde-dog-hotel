@@ -649,12 +649,11 @@ export async function createAdminUserImmediately(payload: {
 //  2. Verify the user has an active admin_roles row
 //  3. Verify app_metadata.must_change_password === true (guard: cannot be called freely)
 //  4. Validate password strength server-side
-//  5. Update the Auth password via auth.admin.updateUserById
-//  6. Only on success: clear app_metadata.must_change_password
-//  7. Only on success: write password_initialized audit event
-//  8. Return { ok: true } — the password itself is never returned, logged, or stored
-//
-// If the password update fails, the flag is NOT cleared and NO audit event is written.
+//  5. ONE combined auth.admin.updateUserById: password + app_metadata in a single request.
+//     Existing app_metadata keys (provider, providers, role, …) are preserved via spread.
+//     If this call fails for any reason, neither the password nor the flag is changed.
+//  6. Only on success: write password_initialized audit event
+//  7. Return { ok: true } — the password itself is never returned, logged, or stored
 
 export async function initializeAdminPassword(newPassword: string): Promise<ActionResult> {
   // 1. Obtain authenticated user server-side — cannot be spoofed from the browser
@@ -700,46 +699,34 @@ export async function initializeAdminPassword(newPassword: string): Promise<Acti
     return { ok: false, error: 'Heslo musí obsahovat speciální znak.' }
   }
 
-  // 5. Update the password via Admin API — service-role only, never exposed to browser.
-  //    We use updateUserById so the operation is server-to-server, not reliant on the
-  //    client token having elevated permissions.
-  const { error: pwErr } = await admin.auth.admin.updateUserById(user.id, {
+  // 5. Single combined Admin API call: password + app_metadata in one request.
+  //    - Spread existing app_metadata so provider, providers, role, and any other
+  //      keys set by Supabase or prior code are preserved unchanged.
+  //    - must_change_password is overridden to false only if this call succeeds.
+  //    - If the call fails, the Supabase Auth server applies neither change —
+  //      the password stays as-is and the flag stays true.
+  const existingAppMetadata = (user.app_metadata ?? {}) as Record<string, unknown>
+
+  const { error: updateErr } = await admin.auth.admin.updateUserById(user.id, {
     password: pw,
-    // Do NOT pass app_metadata here — update it only after this succeeds (step 6)
+    app_metadata: {
+      ...existingAppMetadata,
+      must_change_password: false,
+    },
   })
 
-  if (pwErr) {
-    console.error('[verde] initializeAdminPassword: password update failed', {
-      code: pwErr.code,
-      status: pwErr.status,
-      message: pwErr.message,
+  if (updateErr) {
+    console.error('[verde] initializeAdminPassword: combined update failed', {
+      code:    updateErr.code,
+      status:  updateErr.status,
+      message: updateErr.message,
       // password is intentionally omitted
     })
-    return { ok: false, error: `Nastavení hesla se nezdařilo: ${pwErr.message}` }
+    return { ok: false, error: `Nastavení hesla se nezdařilo: ${updateErr.message}` }
   }
 
-  // 6. Password update succeeded — NOW clear the flag.
-  //    If this fails (extremely unlikely), the user will be redirected back here
-  //    on next request, but their password has already been updated so they can
-  //    simply submit again and this action will reject at step 3 on the next call
-  //    once the flag is eventually cleared by a retry.
-  const { error: metaErr } = await admin.auth.admin.updateUserById(user.id, {
-    app_metadata: { must_change_password: false },
-  })
-
-  if (metaErr) {
-    // Non-fatal: flag may linger until a retry clears it, but the password has been set.
-    // Log the diagnostic but do not fail the user-visible flow.
-    console.error('[verde] initializeAdminPassword: flag clear failed (non-fatal)', {
-      code: metaErr.code,
-      message: metaErr.message,
-    })
-  }
-
-  // 7. Audit event — password value is intentionally absent from meta
-  await auditUserEvent(user.id, user.id, 'password_initialized', {
-    flag_cleared: !metaErr,
-  })
+  // 6. Audit event — password value is intentionally absent from meta
+  await auditUserEvent(user.id, user.id, 'password_initialized', {})
 
   return { ok: true }
 }

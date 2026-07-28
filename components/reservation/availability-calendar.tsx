@@ -30,16 +30,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, CalendarDays } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { CalendarAppearance } from '@/lib/types'
+import type { CalendarAppearance, DayState } from '@/lib/types'
 import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DayOccupancy {
-  date: string
-  booked: number
+  date:    string
+  booked:  number
   maxDogs: number
-  free: number
+  free:    number
+  /** Day state from availability_months/availability_days tables. */
+  state?: DayState
 }
 
 type OccupancyMap = Record<string, DayOccupancy>
@@ -96,10 +98,13 @@ function addMonths(year: number, month: number, delta: number): { year: number; 
   return { year: y, month: m + 1 }
 }
 
-type DayStatus = 'free' | 'partial' | 'scarce' | 'full' | 'unknown'
+type DayStatus = 'free' | 'partial' | 'scarce' | 'full' | 'unknown' | 'closed' | 'unreleased'
 
 function getDayStatus(occ: DayOccupancy | undefined): DayStatus {
   if (!occ) return 'unknown'
+  // Day-state gates take priority over occupancy counts
+  if (occ.state === 'unreleased') return 'unreleased'
+  if (occ.state === 'closed')     return 'closed'
   if (occ.free <= 0) return 'full'
   if (occ.free === 1) return 'scarce'
   if (occ.free <= occ.maxDogs / 2) return 'partial'
@@ -147,18 +152,21 @@ function findBlockingNight(from: string, to: string, occ: OccupancyMap): string 
  *   "28. července 2026, plně obsazeno"
  */
 function getDayAriaLabel(
-  dateStr: string,
-  occ: DayOccupancy | undefined,
+  dateStr:    string,
+  occ:        DayOccupancy | undefined,
   isValidDep: boolean,
-  isArrival: boolean,
+  isArrival:  boolean,
   isDeparture: boolean,
 ): string {
-  const d = new Date(dateStr + 'T00:00:00')
+  const d    = new Date(dateStr + 'T00:00:00')
   const base = `${d.getDate()}. ${MONTH_NAMES_GENITIVE_CS[d.getMonth()]} ${d.getFullYear()}`
-  if (isArrival) return `${base}, datum příjezdu`
+  if (isArrival)   return `${base}, datum příjezdu`
   if (isDeparture) return `${base}, datum odjezdu`
-  if (isValidDep) return `${base}, plně obsazeno – lze zvolit jako odjezd`
+  if (isValidDep)  return `${base}, plně obsazeno – lze zvolit jako odjezd`
   if (!occ) return base
+  // Day-state descriptions
+  if (occ.state === 'unreleased') return `${base}, termín zatím nezveřejněn`
+  if (occ.state === 'closed')     return `${base}, hotel uzavřen`
   if (occ.free <= 0) return `${base}, plně obsazeno`
   if (occ.free === 1) return `${base}, poslední volné místo`
   if (occ.free <= occ.maxDogs / 2) return `${base}, zbývají ${occ.free} místa`
@@ -292,7 +300,9 @@ function MonthGrid({
             nightsBetween(arrival, dateStr) > maximumStayNights
           )
 
-          const isDisabled = isPast || (isFull && !isValidDeparture) || exceedsMaxStay
+          const isClosed     = status === 'closed'
+          const isUnreleased = status === 'unreleased'
+          const isDisabled   = isPast || (isFull && !isValidDeparture) || exceedsMaxStay || isClosed || isUnreleased
 
           const isHoverDep =
             selectingDeparture && hoverDate === dateStr && dateStr > arrival && !departure
@@ -348,6 +358,16 @@ function MonthGrid({
                 cellText   = appearance.availableText
                 cellBorder = appearance.availableText + '22'
                 break
+              case 'closed':
+                cellBg     = appearance.closedBackground
+                cellText   = appearance.closedText
+                cellBorder = appearance.closedText + '33'
+                break
+              case 'unreleased':
+                cellBg     = appearance.unreleasedBackground
+                cellText   = appearance.unreleasedText
+                cellBorder = 'transparent'
+                break
               default:
                 // unknown — no data yet
                 cellBg     = 'transparent'
@@ -360,14 +380,14 @@ function MonthGrid({
           // Shown below the day number when the cell is not selected/range
           let indicator: string | null = null
           if (!isPast && !isArrival && !isDeparture && !isInRange && !isHoverDep) {
-            if (status === 'full') {
+            if (status === 'full' || status === 'closed') {
               indicator = '×'
             } else if (status === 'scarce') {
               indicator = '1'
             } else if (status === 'partial' && occ) {
               indicator = String(occ.free)
             }
-            // 'free' has no secondary indicator — it's the default state
+            // 'free', 'unreleased' have no secondary indicator
           }
 
           // Today's cell gets a colored outline ring
@@ -479,6 +499,18 @@ function CalendarLegend({ appearance }: { appearance: CalendarAppearance }) {
       bg: appearance.fullBackground,
       text: appearance.fullText,
       indicator: '×',
+    },
+    {
+      label: 'Uzavřeno',
+      bg: appearance.closedBackground,
+      text: appearance.closedText,
+      indicator: '×',
+    },
+    {
+      label: 'Nezveřejněno',
+      bg: appearance.unreleasedBackground,
+      text: appearance.unreleasedText,
+      indicator: null,
     },
   ]
 

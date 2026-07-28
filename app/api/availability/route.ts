@@ -15,6 +15,7 @@
 
 import { NextResponse } from 'next/server'
 import { getOccupancyForRange } from '@/lib/capacity'
+import { buildDayStateMap } from '@/lib/availability-months'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -27,6 +28,49 @@ export async function GET(req: Request) {
   }
   if (arrival >= departure) {
     return NextResponse.json({ error: 'Datum odjezdu musí být po datu příjezdu.' }, { status: 400 })
+  }
+
+  // ── Day-state gate (FAIL-CLOSED) ─────────────────────────────────────────
+  // Any unreleased or closed night blocks the stay.
+  // 409 = intentionally unavailable. 503 = availability tables unreadable.
+  try {
+    const stateMap = await buildDayStateMap(arrival, departure)
+    for (const [date, state] of stateMap) {
+      if (state === 'unreleased') {
+        return NextResponse.json(
+          {
+            available: false,
+            spotsLeft: 0,
+            dayState: 'unreleased',
+            reason: 'Termíny pro zvolený měsíc zatím nebyly zveřejněny.',
+          },
+          { status: 409 },
+        )
+      }
+      if (state === 'closed') {
+        return NextResponse.json(
+          {
+            available: false,
+            spotsLeft: 0,
+            dayState: 'closed',
+            reason: 'Hotel ve zvoleném termínu nepřijímá nové pobyty.',
+          },
+          { status: 409 },
+        )
+      }
+    }
+  } catch (err) {
+    // FAIL-CLOSED: availability tables unreadable → 503
+    console.error('[verde] buildDayStateMap failed in /api/availability:', err)
+    return NextResponse.json(
+      {
+        available: false,
+        spotsLeft: 0,
+        code: 'AVAILABILITY_CHECK_FAILED',
+        reason: 'Dostupnost termínu se nyní nepodařilo ověřit. Zkuste to prosím znovu.',
+      },
+      { status: 503 },
+    )
   }
 
   const rows = await getOccupancyForRange(arrival, departure)

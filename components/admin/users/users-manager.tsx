@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useTransition, useCallback, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   inviteAdminUser,
   createAdminUserImmediately,
@@ -64,7 +65,6 @@ function deriveStatus(row: AdminUserRow): { label: string; style: React.CSSPrope
       style: { background: 'rgba(107,114,128,0.12)', color: '#6b7280' },
     }
   }
-  // Immediately created account awaiting first-login password change
   if (row.must_change_password) {
     return {
       label: 'Musí změnit heslo',
@@ -81,18 +81,28 @@ function isPending(row: AdminUserRow) {
   return !row.confirmed_at
 }
 
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('cs-CZ')
+}
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('cs-CZ', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 // ─── Small shared UI helpers ──────────────────────────────────────────────────
 
-function Badge({
-  label,
-  style,
-}: {
-  label: string
-  style: React.CSSProperties
-}) {
+function Badge({ label, style }: { label: string; style: React.CSSProperties }) {
   return (
     <span
-      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap"
       style={style}
     >
       {label}
@@ -216,13 +226,7 @@ function Modal({
   )
 }
 
-function FieldRow({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label
@@ -257,13 +261,11 @@ const PW_CHARS = {
 
 function generateSecurePassword(length = 16): string {
   const pools = [PW_CHARS.upper, PW_CHARS.lower, PW_CHARS.number, PW_CHARS.symbol]
-  // Guarantee at least one from each pool
   const chars = pools.map((p) => p[Math.floor(Math.random() * p.length)])
   const all = pools.join('')
   for (let i = chars.length; i < length; i++) {
     chars.push(all[Math.floor(Math.random() * all.length)])
   }
-  // Fisher-Yates shuffle
   for (let i = chars.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[chars[i], chars[j]] = [chars[j], chars[i]]
@@ -453,7 +455,7 @@ function ImmediateSuccessView({
   )
 }
 
-// ─── Add user modal (immediate + invite) ─────────────────────────────────────
+// ─── Add user modal ───────────────────────────────────────────────────────────
 
 type AddMethod = 'immediate' | 'invite'
 
@@ -470,28 +472,19 @@ function AddUserModal({
   const [error, setError] = useState('')
   const [method, setMethod] = useState<AddMethod>('immediate')
 
-  // Shared fields
   const [firstName, setFirstName] = useState('')
   const [lastName,  setLastName]  = useState('')
   const [email,     setEmail]     = useState('')
   const [role,      setRole]      = useState<AppRole>('staff')
+  const [password,  setPassword]  = useState('')
 
-  // Immediate-creation fields
-  const [password, setPassword] = useState('')
-
-  // Success state (immediate only — shows once then gone)
   const [successData, setSuccessData] = useState<{
     email: string; role: AppRole; fullName: string; password: string
   } | null>(null)
-
-  // Invite-only success
   const [inviteSent, setInviteSent] = useState(false)
-
-  // Rate-limit fallback flag
   const [rateLimited, setRateLimited] = useState(false)
 
   const availableRoles = callerRole === 'owner' ? ROLES : ROLES.filter((r) => r.value !== 'owner')
-
   const generatePw = useCallback(() => setPassword(generateSecurePassword()), [])
 
   function handleClose() {
@@ -518,7 +511,7 @@ function AddUserModal({
       setError('Heslo nesplňuje požadavky na bezpečnost.')
       return
     }
-    const capturedPw = password // capture before reset
+    const capturedPw = password
     start(async () => {
       const res = await createAdminUserImmediately({
         first_name: firstName.trim(),
@@ -554,7 +547,6 @@ function AddUserModal({
       if (res.ok) {
         setInviteSent(true)
       } else {
-        // Detect rate-limit to show fallback button
         if (
           res.error?.toLowerCase().includes('rate limit') ||
           res.error?.toLowerCase().includes('limit odesílání')
@@ -568,7 +560,6 @@ function AddUserModal({
 
   return (
     <Modal open={open} onClose={handleClose} title="Přidat uživatele">
-      {/* Success screens */}
       {successData && (
         <ImmediateSuccessView
           email={successData.email}
@@ -588,7 +579,6 @@ function AddUserModal({
       )}
       {!successData && !inviteSent && (
         <>
-          {/* Method toggle */}
           <div
             className="flex rounded-xl p-1 mb-5 gap-1"
             style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)' }}
@@ -615,65 +605,33 @@ function AddUserModal({
             ))}
           </div>
 
-          {/* ── Shared name + email + role fields ── */}
           <div className="space-y-4">
             <div className="flex gap-3">
               <FieldRow label="Jméno">
-                <input
-                  required
-                  style={inputStyle}
-                  placeholder="Jana"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                />
+                <input required style={inputStyle} placeholder="Jana" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
               </FieldRow>
               <FieldRow label="Příjmení">
-                <input
-                  required
-                  style={inputStyle}
-                  placeholder="Nováková"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                />
+                <input required style={inputStyle} placeholder="Nováková" value={lastName} onChange={(e) => setLastName(e.target.value)} />
               </FieldRow>
             </div>
             <FieldRow label="E-mail">
-              <input
-                type="email"
-                required
-                style={inputStyle}
-                placeholder="jana@example.cz"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <input type="email" required style={inputStyle} placeholder="jana@example.cz" value={email} onChange={(e) => setEmail(e.target.value)} />
             </FieldRow>
             <FieldRow label="Role">
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as AppRole)}
-                style={inputStyle}
-              >
+              <select value={role} onChange={(e) => setRole(e.target.value as AppRole)} style={inputStyle}>
                 {availableRoles.map((r) => (
                   <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>
             </FieldRow>
 
-            {/* ── Immediate: password field ── */}
             {method === 'immediate' && (
               <form onSubmit={handleSubmitImmediate}>
                 <FieldRow label="Dočasné heslo">
-                  <PasswordField
-                    value={password}
-                    onChange={setPassword}
-                    onGenerate={generatePw}
-                  />
+                  <PasswordField value={password} onChange={setPassword} onGenerate={generatePw} />
                 </FieldRow>
                 {error && (
-                  <p
-                    className="mt-3 text-xs rounded-lg px-3 py-2"
-                    style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}
-                  >
+                  <p className="mt-3 text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}>
                     {error}
                   </p>
                 )}
@@ -686,7 +644,6 @@ function AddUserModal({
               </form>
             )}
 
-            {/* ── Invite: SMTP notice + submit ── */}
             {method === 'invite' && (
               <form onSubmit={handleSubmitInvite}>
                 <div
@@ -697,10 +654,7 @@ function AddUserModal({
                 </div>
                 {error && (
                   <div className="mt-3 space-y-2">
-                    <p
-                      className="text-xs rounded-lg px-3 py-2"
-                      style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}
-                    >
+                    <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}>
                       {error}
                     </p>
                     {rateLimited && (
@@ -730,7 +684,7 @@ function AddUserModal({
   )
 }
 
-// ─── Edit / detail modal ──────────────────────────────────────────────────────
+// ─── Edit modal ───────────────────────────────────────────────────────────────
 
 function EditModal({
   user,
@@ -750,7 +704,6 @@ function EditModal({
 
   const isOwner = callerRole === 'owner'
   const availableRoles = isOwner ? ROLES : ROLES.filter((r) => r.value !== 'owner')
-  const isSelf = user.user_id === callerId
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -781,29 +734,18 @@ function EditModal({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex gap-3">
           <FieldRow label="Jméno">
-            <input
-              name="first_name"
-              defaultValue={defaultFirst}
-              required
-              style={inputStyle}
-            />
+            <input name="first_name" defaultValue={defaultFirst} required style={inputStyle} />
           </FieldRow>
           <FieldRow label="Příjmení">
-            <input
-              name="last_name"
-              defaultValue={defaultLast}
-              required
-              style={inputStyle}
-            />
+            <input name="last_name" defaultValue={defaultLast} required style={inputStyle} />
           </FieldRow>
         </div>
         <FieldRow label="E-mail">
-          {/* Email is read-only — changing auth email requires a separate Supabase flow */}
           <input
             value={user.email}
             readOnly
             style={{ ...inputStyle, opacity: 0.6, cursor: 'not-allowed' }}
-            title="E-mail nelze měnit přímo. Kontaktujte Supabase nebo použijte workflow přezvání."
+            title="E-mail nelze měnit přímo."
           />
           <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>
             E-mail je pouze ke čtení. Pro změnu použijte workflow nového pozvání.
@@ -817,34 +759,23 @@ function EditModal({
             style={inputStyle}
           >
             {availableRoles.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
+              <option key={r.value} value={r.value}>{r.label}</option>
             ))}
           </select>
         </FieldRow>
         <FieldRow label="Stav">
-          <select
-            name="active"
-            defaultValue={user.active ? '1' : '0'}
-            style={inputStyle}
-          >
+          <select name="active" defaultValue={user.active ? '1' : '0'} style={inputStyle}>
             <option value="1">Aktivní</option>
             <option value="0">Pozastaven</option>
           </select>
         </FieldRow>
         {error && (
-          <p
-            className="text-xs rounded-lg px-3 py-2"
-            style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}
-          >
+          <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}>
             {error}
           </p>
         )}
         <div className="flex justify-end gap-3 pt-1">
-          <GhostBtn onClick={onClose} disabled={pending}>
-            Zrušit
-          </GhostBtn>
+          <GhostBtn onClick={onClose} disabled={pending}>Zrušit</GhostBtn>
           <AdminBtn type="submit" disabled={pending}>
             {pending ? 'Ukládám...' : 'Uložit'}
           </AdminBtn>
@@ -854,15 +785,9 @@ function EditModal({
   )
 }
 
-// ─── Remove confirmation dialog ───────────────────────────────────────────────
+// ─── Remove confirmation modal ────────────────────────────────────────────────
 
-function RemoveConfirmModal({
-  user,
-  onClose,
-}: {
-  user: AdminUserRow | null
-  onClose: () => void
-}) {
+function RemoveConfirmModal({ user, onClose }: { user: AdminUserRow | null; onClose: () => void }) {
   const [pending, start] = useTransition()
   const [error, setError] = useState('')
   const [deleteAuth, setDeleteAuth] = useState(false)
@@ -892,35 +817,22 @@ function RemoveConfirmModal({
           className="rounded-xl p-4 text-xs space-y-2"
           style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)' }}
         >
-          <p>
-            <strong>Deaktivovat:</strong> účet zůstane, přístup bude zakázán. Auditní záznamy jsou zachovány.
-          </p>
-          <p>
-            <strong>Odebrat:</strong> admin přístup bude odebrán. Rezervace a záznamy zákazníků zůstanou nedotčeny.
-          </p>
+          <p><strong>Deaktivovat:</strong> účet zůstane, přístup bude zakázán. Auditní záznamy jsou zachovány.</p>
+          <p><strong>Odebrat:</strong> admin přístup bude odebrán. Rezervace a záznamy zákazníků zůstanou nedotčeny.</p>
         </div>
         <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={deleteAuth}
-            onChange={(e) => setDeleteAuth(e.target.checked)}
-          />
+          <input type="checkbox" checked={deleteAuth} onChange={(e) => setDeleteAuth(e.target.checked)} />
           <span style={{ color: 'var(--admin-text)' }}>
             Také smazat přihlašovací účet (Auth) — doporučeno pouze pro pozvané uživatele, kteří se nikdy nepřihlásili
           </span>
         </label>
         {error && (
-          <p
-            className="text-xs rounded-lg px-3 py-2"
-            style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}
-          >
+          <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}>
             {error}
           </p>
         )}
         <div className="flex justify-end gap-3">
-          <GhostBtn onClick={onClose} disabled={pending}>
-            Zrušit
-          </GhostBtn>
+          <GhostBtn onClick={onClose} disabled={pending}>Zrušit</GhostBtn>
           <AdminBtn danger onClick={handle} disabled={pending}>
             {pending ? 'Odebírám...' : 'Odebrat přístup'}
           </AdminBtn>
@@ -930,7 +842,91 @@ function RemoveConfirmModal({
   )
 }
 
-// ─── Row action menu ──────────────────────────────────────────────────────────
+// ─── Portal dropdown ──────────────────────────────────────────────────────────
+//
+// Renders via createPortal into document.body so it is never clipped by any
+// ancestor overflow. Position is computed from the trigger button's bounding rect.
+
+interface DropdownItem {
+  label: string
+  danger?: boolean
+  dividerBefore?: boolean
+  onClick: () => void
+}
+
+function PortalDropdown({
+  open,
+  onClose,
+  anchorRef,
+  items,
+}: {
+  open: boolean
+  onClose: () => void
+  anchorRef: React.RefObject<HTMLButtonElement | null>
+  items: DropdownItem[]
+}) {
+  const [coords, setCoords] = useState({ top: 0, right: 0 })
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open || !anchorRef.current) return
+    const rect = anchorRef.current.getBoundingClientRect()
+    setCoords({
+      top: rect.bottom + 6,
+      right: window.innerWidth - rect.right,
+    })
+  }, [open, anchorRef])
+
+  useEffect(() => {
+    if (!open) return
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  const menu = (
+    <>
+      {/* backdrop — catches outside clicks */}
+      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden="true" />
+      <div
+        ref={menuRef}
+        role="menu"
+        className="fixed z-50 min-w-[192px] rounded-xl shadow-xl py-1"
+        style={{
+          top: coords.top,
+          right: coords.right,
+          background: 'var(--admin-card)',
+          border: '1px solid var(--admin-card-border)',
+        }}
+      >
+        {items.map((item, idx) => (
+          <div key={idx}>
+            {item.dividerBefore && (
+              <hr style={{ borderColor: 'var(--admin-card-border)', margin: '4px 0' }} />
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { item.onClick(); onClose() }}
+              className="w-full text-left px-4 py-2 text-sm hover:opacity-80 transition-opacity"
+              style={{ color: item.danger ? '#dc2626' : 'var(--admin-text)' }}
+            >
+              {item.label}
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+
+  return typeof document !== 'undefined' ? createPortal(menu, document.body) : null
+}
+
+// ─── Row action button ────────────────────────────────────────────────────────
 
 function RowActions({
   user,
@@ -948,15 +944,16 @@ function RowActions({
   const [open, setOpen] = useState(false)
   const [pending, start] = useTransition()
   const [actionError, setActionError] = useState('')
+  const btnRef = useRef<HTMLButtonElement>(null)
 
   const isOwnerCaller = callerRole === 'owner'
   const isOwnerTarget = user.role === 'owner'
-  const isSelf = user.user_id === callerId
   const pending_ = isPending(user)
 
-  function runAction(
-    fn: () => Promise<{ ok: boolean; error?: string }>,
-  ) {
+  const canModify = isOwnerCaller || (!isOwnerTarget && callerRole === 'admin')
+  const canRemove = isOwnerCaller
+
+  function runAction(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setActionError('')
     setOpen(false)
     start(async () => {
@@ -965,134 +962,114 @@ function RowActions({
     })
   }
 
-  const canModify = isOwnerCaller || (!isOwnerTarget && callerRole === 'admin')
-  const canRemove = isOwnerCaller
+  const items: DropdownItem[] = [
+    ...(canModify ? [{ label: 'Upravit', onClick: () => { setOpen(false); onEdit(user) } }] : []),
+    ...(canModify && user.active ? [{ label: 'Deaktivovat přístup', onClick: () => runAction(() => deactivateAdminUser(user.user_id)) }] : []),
+    ...(canModify && !user.active ? [{ label: 'Reaktivovat přístup', onClick: () => runAction(() => reactivateAdminUser(user.user_id)) }] : []),
+    ...(isOwnerCaller && pending_ ? [
+      { label: 'Znovu odeslat pozvánku', dividerBefore: true, onClick: () => runAction(() => resendInvitation(user.user_id)) },
+      { label: 'Zrušit pozvánku', danger: true, onClick: () => runAction(() => cancelInvitation(user.user_id)) },
+    ] : []),
+    ...(canRemove ? [{ label: 'Odebrat uživatele', danger: true, dividerBefore: true, onClick: () => { setOpen(false); onRemove(user) } }] : []),
+  ]
 
   return (
-    <div className="relative">
+    <div>
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="rounded-lg px-2 py-1 text-xs font-medium transition-opacity opacity-60 hover:opacity-100"
+        aria-label="Akce"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={pending}
+        className="rounded-lg px-2 py-1 text-xs font-medium transition-opacity opacity-60 hover:opacity-100 disabled:opacity-30"
         style={{
           border: '1px solid var(--admin-card-border)',
           color: 'var(--admin-text)',
         }}
-        aria-label="Akce"
-        disabled={pending}
       >
         ···
       </button>
       {actionError && (
         <p
-          className="absolute right-0 top-8 z-10 w-64 text-xs rounded-lg px-3 py-2 shadow-lg"
-          style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.25)' }}
+          className="mt-1 text-xs rounded-lg px-2 py-1"
+          style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.25)', maxWidth: '200px' }}
         >
           {actionError}
-          <button
-            className="ml-2 underline"
-            onClick={() => setActionError('')}
-          >
-            ×
-          </button>
+          <button className="ml-1 underline" onClick={() => setActionError('')}>×</button>
         </p>
       )}
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-          />
-          <div
-            className="absolute right-0 top-8 z-20 min-w-[188px] rounded-xl shadow-xl py-1"
-            style={{
-              background: 'var(--admin-card)',
-              border: '1px solid var(--admin-card-border)',
-            }}
-          >
-            {canModify && (
-              <MenuItem
-                label="Upravit"
-                onClick={() => {
-                  setOpen(false)
-                  onEdit(user)
-                }}
-              />
-            )}
-            {canModify && user.active && (
-              <MenuItem
-                label="Deaktivovat přístup"
-                onClick={() =>
-                  runAction(() => deactivateAdminUser(user.user_id))
-                }
-              />
-            )}
-            {canModify && !user.active && (
-              <MenuItem
-                label="Reaktivovat přístup"
-                onClick={() =>
-                  runAction(() => reactivateAdminUser(user.user_id))
-                }
-              />
-            )}
-            {isOwnerCaller && pending_ && (
-              <>
-                <MenuDivider />
-                <MenuItem
-                  label="Znovu odeslat pozvánku"
-                  onClick={() => runAction(() => resendInvitation(user.user_id))}
-                />
-                <MenuItem
-                  label="Zrušit pozvánku"
-                  danger
-                  onClick={() => runAction(() => cancelInvitation(user.user_id))}
-                />
-              </>
-            )}
-            {canRemove && (
-              <>
-                <MenuDivider />
-                <MenuItem
-                  label="Odebrat uživatele"
-                  danger
-                  onClick={() => {
-                    setOpen(false)
-                    onRemove(user)
-                  }}
-                />
-              </>
-            )}
-          </div>
-        </>
-      )}
+      <PortalDropdown
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={btnRef}
+        items={items}
+      />
     </div>
   )
 }
 
-function MenuItem({
-  label,
-  onClick,
-  danger,
-}: {
-  label: string
-  onClick: () => void
-  danger?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full text-left px-4 py-2 text-sm hover:opacity-80 transition-opacity"
-      style={{ color: danger ? '#dc2626' : 'var(--admin-text)' }}
-    >
-      {label}
-    </button>
-  )
-}
+// ─── Mobile user card ─────────────────────────────────────────────────────────
 
-function MenuDivider() {
+function UserCard({
+  user,
+  callerRole,
+  callerId,
+  onEdit,
+  onRemove,
+}: {
+  user: AdminUserRow
+  callerRole: AppRole
+  callerId: string
+  onEdit: (u: AdminUserRow) => void
+  onRemove: (u: AdminUserRow) => void
+}) {
+  const status = deriveStatus(user)
   return (
-    <hr style={{ borderColor: 'var(--admin-card-border)', margin: '4px 0' }} />
+    <div
+      className="rounded-xl p-4 space-y-3"
+      style={{
+        background: 'var(--admin-card)',
+        border: '1px solid var(--admin-card-border)',
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium text-sm truncate" style={{ color: 'var(--admin-text)' }}>
+            {user.full_name || '—'}
+          </p>
+          <p
+            className="text-xs truncate mt-0.5"
+            style={{ color: 'var(--admin-text-muted)' }}
+            title={user.email}
+          >
+            {user.email || '—'}
+          </p>
+        </div>
+        <RowActions
+          user={user}
+          callerRole={callerRole}
+          callerId={callerId}
+          onEdit={onEdit}
+          onRemove={onRemove}
+        />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Badge label={ROLE_LABELS[user.role] ?? user.role} style={roleBadgeStyle(user.role)} />
+        <Badge label={status.label} style={status.style} />
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+        <div>
+          <span className="uppercase tracking-wide text-[10px] font-medium block">Poslední přihlášení</span>
+          {formatDateTime(user.last_sign_in_at)}
+        </div>
+        <div>
+          <span className="uppercase tracking-wide text-[10px] font-medium block">Přidán</span>
+          {formatDate(user.created_at)}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1107,69 +1084,90 @@ export function UsersManager({
   callerRole: AppRole
   callerId: string
 }) {
-  const [showInvite, setShowInvite] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   const [editUser, setEditUser] = useState<AdminUserRow | null>(null)
   const [removeUser, setRemoveUser] = useState<AdminUserRow | null>(null)
 
-  const canInvite = callerRole === 'owner'
+  const canAdd = callerRole === 'owner'
 
   return (
     <>
-      {/* Add user button — rendered here so RSC PageHeader can pass it as action */}
-      {canInvite && (
-        <div className="flex justify-end mb-0">
-          <AdminBtn onClick={() => setShowInvite(true)}>
-            + Přidat uživatele
-          </AdminBtn>
+      {/* ── Page header ── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+        <div>
+          <h1
+            className="text-2xl font-bold"
+            style={{ fontFamily: 'var(--font-serif)', color: 'var(--admin-text)' }}
+          >
+            Uživatelé
+          </h1>
+          <p className="mt-0.5 text-sm" style={{ color: 'var(--admin-text-muted)' }}>
+            Správa přístupů do administrace
+          </p>
         </div>
-      )}
-
-      {/* Table */}
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{
-          border: '1px solid var(--admin-card-border)',
-          background: 'var(--admin-card)',
-        }}
-      >
-        {!users.length ? (
-          <div className="p-10 text-center">
-            <p
-              className="text-sm mb-2"
-              style={{ color: 'var(--admin-text-muted)' }}
-            >
-              Zatím žádní administrátoři.
-            </p>
-            {canInvite && (
-              <button
-                type="button"
-                onClick={() => setShowInvite(true)}
-                className="text-sm font-medium"
-                style={{ color: 'var(--admin-accent)' }}
-              >
-                Přidat prvního uživatele →
-              </button>
-            )}
+        {canAdd && (
+          <div className="shrink-0">
+            <AdminBtn onClick={() => setShowAdd(true)}>
+              + Přidat uživatele
+            </AdminBtn>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        )}
+      </div>
+
+      {/* ── User list ── */}
+      {!users.length ? (
+        /* Empty state */
+        <div
+          className="rounded-2xl p-10 text-center"
+          style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
+        >
+          <p className="text-sm mb-2" style={{ color: 'var(--admin-text-muted)' }}>
+            Zatím žádní administrátoři.
+          </p>
+          {canAdd && (
+            <button
+              type="button"
+              onClick={() => setShowAdd(true)}
+              className="text-sm font-medium"
+              style={{ color: 'var(--admin-accent)' }}
+            >
+              Přidat prvního uživatele →
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* ── Desktop table (md+) ── */}
+          <div
+            className="hidden md:block rounded-2xl"
+            style={{
+              background: 'var(--admin-card)',
+              border: '1px solid var(--admin-card-border)',
+            }}
+          >
+            <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                {/* Uživatel */}
+                <col style={{ width: '180px' }} />
+                {/* E-mail — flex, largest */}
+                <col />
+                {/* Role */}
+                <col style={{ width: '130px' }} />
+                {/* Stav */}
+                <col style={{ width: '148px' }} />
+                {/* Poslední přihlášení */}
+                <col style={{ width: '148px' }} />
+                {/* Přidán */}
+                <col style={{ width: '100px' }} />
+                {/* Akce */}
+                <col style={{ width: '56px' }} />
+              </colgroup>
               <thead>
-                <tr
-                  style={{ borderBottom: '1px solid var(--admin-card-border)' }}
-                >
-                  {[
-                    'Uživatel',
-                    'E-mail',
-                    'Role',
-                    'Stav',
-                    'Poslední přihlášení',
-                    'Přidán',
-                    '',
-                  ].map((h) => (
+                <tr style={{ borderBottom: '1px solid var(--admin-card-border)' }}>
+                  {['Uživatel', 'E-mail', 'Role', 'Stav', 'Poslední přihlášení', 'Přidán', ''].map((h) => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider whitespace-nowrap"
+                      className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider"
                       style={{ color: 'var(--admin-text-muted)' }}
                     >
                       {h}
@@ -1183,31 +1181,27 @@ export function UsersManager({
                   return (
                     <tr
                       key={u.user_id}
-                      style={{
-                        borderBottom: '1px solid var(--admin-card-border)',
-                      }}
                       className="hover:bg-black/5 transition-colors"
+                      style={{ borderBottom: '1px solid var(--admin-card-border)' }}
                     >
                       {/* Name */}
                       <td
-                        className="px-4 py-3 font-medium whitespace-nowrap"
+                        className="px-4 py-3 font-medium whitespace-nowrap overflow-hidden text-ellipsis"
                         style={{ color: 'var(--admin-text)' }}
                       >
                         {u.full_name || '—'}
                       </td>
                       {/* Email */}
                       <td
-                        className="px-4 py-3 tabular-nums"
+                        className="px-4 py-3 overflow-hidden text-ellipsis whitespace-nowrap"
                         style={{ color: 'var(--admin-text-muted)' }}
+                        title={u.email || undefined}
                       >
                         {u.email || '—'}
                       </td>
                       {/* Role */}
                       <td className="px-4 py-3">
-                        <Badge
-                          label={ROLE_LABELS[u.role] ?? u.role}
-                          style={roleBadgeStyle(u.role)}
-                        />
+                        <Badge label={ROLE_LABELS[u.role] ?? u.role} style={roleBadgeStyle(u.role)} />
                       </td>
                       {/* Status */}
                       <td className="px-4 py-3">
@@ -1218,25 +1212,17 @@ export function UsersManager({
                         className="px-4 py-3 tabular-nums text-xs whitespace-nowrap"
                         style={{ color: 'var(--admin-text-muted)' }}
                       >
-                        {u.last_sign_in_at
-                          ? new Date(u.last_sign_in_at).toLocaleString('cs-CZ', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : '—'}
+                        {formatDateTime(u.last_sign_in_at)}
                       </td>
                       {/* Created */}
                       <td
                         className="px-4 py-3 tabular-nums text-xs whitespace-nowrap"
                         style={{ color: 'var(--admin-text-muted)' }}
                       >
-                        {new Date(u.created_at).toLocaleDateString('cs-CZ')}
+                        {formatDate(u.created_at)}
                       </td>
                       {/* Actions */}
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-right">
                         <RowActions
                           user={u}
                           callerRole={callerRole}
@@ -1251,13 +1237,27 @@ export function UsersManager({
               </tbody>
             </table>
           </div>
-        )}
-      </div>
 
-      {/* Modals */}
+          {/* ── Mobile cards (below md) ── */}
+          <div className="md:hidden space-y-3">
+            {users.map((u) => (
+              <UserCard
+                key={u.user_id}
+                user={u}
+                callerRole={callerRole}
+                callerId={callerId}
+                onEdit={setEditUser}
+                onRemove={setRemoveUser}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── Modals ── */}
       <AddUserModal
-        open={showInvite}
-        onClose={() => setShowInvite(false)}
+        open={showAdd}
+        onClose={() => setShowAdd(false)}
         callerRole={callerRole}
       />
       <EditModal

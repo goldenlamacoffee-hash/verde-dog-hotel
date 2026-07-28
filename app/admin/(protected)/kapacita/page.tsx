@@ -1,10 +1,12 @@
 import { getSiteSetting, getCapacityOverrides } from '@/lib/admin/queries'
 import { updateSiteSetting } from '@/lib/admin/actions'
+import { getMonthPlannerData } from '@/lib/admin/availability-actions'
 import { getOccupancyForRange } from '@/lib/capacity'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { CapacityOverridesPanel } from '@/components/admin/capacity/capacity-overrides-panel'
 import { CalendarAppearanceEditor } from '@/components/admin/capacity/calendar-appearance-editor'
 import { MaximumStayEditor } from '@/components/admin/capacity/maximum-stay-editor'
+import { MonthPlanner } from '@/components/admin/capacity/month-planner'
 import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
 import type { CalendarAppearance } from '@/lib/types'
 
@@ -25,6 +27,7 @@ function resolveAppearance(raw: unknown): CalendarAppearance {
 }
 
 export const metadata = { title: 'Kapacita | VERDE Admin' }
+export const dynamic = 'force-dynamic'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,18 +60,39 @@ async function saveCapacity(formData: FormData) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function CapacityPage() {
+export default async function CapacityPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>
+}) {
+  const { month: monthParam } = await searchParams
+
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const fromStr  = fmtDate(today)
   const toStr    = fmtDate(addDays(today, 30))
 
-  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance, rawMaxStay] = await Promise.all([
+  // Resolve which month the planner should display.
+  // Accepts YYYY-MM-01 format; falls back to current month.
+  const ISO_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])-01$/
+  const plannerMonth = monthParam && ISO_MONTH_RE.test(monthParam)
+    ? monthParam
+    : fmtDate(new Date(today.getFullYear(), today.getMonth(), 1))
+
+  // Occupancy range for the planner month: from plannerMonth's first day to its last day (exclusive)
+  const plannerFrom = plannerMonth
+  const plannerToDate = new Date(plannerMonth + 'T00:00:00Z')
+  plannerToDate.setUTCMonth(plannerToDate.getUTCMonth() + 1)
+  const plannerTo = plannerToDate.toISOString().split('T')[0]
+
+  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance, rawMaxStay, plannerData, plannerOccupancyResult] = await Promise.all([
     getSiteSetting('capacity'),
     getCapacityOverrides(),
     getOccupancyForRange(fromStr, toStr),
     getSiteSetting('availabilityCalendarAppearance'),
     getSiteSetting('maximumStayNights'),
+    getMonthPlannerData(plannerMonth),
+    getOccupancyForRange(plannerFrom, plannerTo),
   ])
 
   const calendarAppearance = resolveAppearance(rawAppearance)
@@ -96,6 +120,35 @@ export default async function CapacityPage() {
         title="Kapacita"
         description="Správa maximální kapacity, blokací a přehled obsazenosti"
       />
+
+      {/* ── Month planner ────────────────────────────────────────────────────── */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
+      >
+        <h2
+          className="text-xs font-semibold uppercase tracking-wider mb-1"
+          style={{ color: 'var(--admin-text-muted)' }}
+        >
+          Plánování dostupnosti po měsících
+        </h2>
+        <p className="mb-5 text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+          Otevřete nebo uzavřete jednotlivé dny a publikujte měsíc, aby se zobrazil
+          v rezervačním kalendáři. Nepublikované měsíce vidí zákazníci jako nedostupné.
+        </p>
+        <MonthPlanner
+          monthStart={plannerMonth}
+          initialMonth={plannerData.month}
+          initialDays={plannerData.days}
+          nextPublished={plannerData.nextPublished}
+          occupancyMap={
+            'error' in plannerOccupancyResult
+              ? {}
+              : Object.fromEntries(plannerOccupancyResult.map((r) => [r.date, r.booked]))
+          }
+          capacity={maxDogs}
+        />
+      </div>
 
       {/* ── Capacity editor ─────────────────────────────────────────────────── */}
       <div

@@ -1,6 +1,5 @@
 import { requireAdmin } from '@/lib/auth/roles'
 import { getAdminUsersWithAuth } from '@/lib/admin/queries'
-import { PageHeader } from '@/components/admin/ui/page-header'
 import { UsersManager } from '@/components/admin/users/users-manager'
 
 export const metadata = { title: 'Uživatelé | VERDE Admin' }
@@ -15,11 +14,7 @@ export default async function AdminUsersPage() {
   const users = await getAdminUsersWithAuth()
 
   return (
-    <div className="space-y-4 max-w-5xl">
-      <PageHeader
-        title="Uživatelé"
-        description="Správa přístupů do administrace"
-      />
+    <div className="max-w-5xl">
       <UsersManager
         users={users}
         callerRole={caller.role}
