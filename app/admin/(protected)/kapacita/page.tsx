@@ -79,13 +79,20 @@ export default async function CapacityPage({
     ? monthParam
     : fmtDate(new Date(today.getFullYear(), today.getMonth(), 1))
 
-  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance, rawMaxStay, plannerData] = await Promise.all([
+  // Occupancy range for the planner month: from plannerMonth's first day to its last day (exclusive)
+  const plannerFrom = plannerMonth
+  const plannerToDate = new Date(plannerMonth + 'T00:00:00Z')
+  plannerToDate.setUTCMonth(plannerToDate.getUTCMonth() + 1)
+  const plannerTo = plannerToDate.toISOString().split('T')[0]
+
+  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance, rawMaxStay, plannerData, plannerOccupancyResult] = await Promise.all([
     getSiteSetting('capacity'),
     getCapacityOverrides(),
     getOccupancyForRange(fromStr, toStr),
     getSiteSetting('availabilityCalendarAppearance'),
     getSiteSetting('maximumStayNights'),
     getMonthPlannerData(plannerMonth),
+    getOccupancyForRange(plannerFrom, plannerTo),
   ])
 
   const calendarAppearance = resolveAppearance(rawAppearance)
@@ -134,6 +141,12 @@ export default async function CapacityPage({
           initialMonth={plannerData.month}
           initialDays={plannerData.days}
           nextPublished={plannerData.nextPublished}
+          occupancyMap={
+            'error' in plannerOccupancyResult
+              ? {}
+              : Object.fromEntries(plannerOccupancyResult.map((r) => [r.date, r.booked]))
+          }
+          capacity={maxDogs}
         />
       </div>
 

@@ -68,6 +68,35 @@ async function auditAvailability(
 
 // ─── Revalidation helper ──────────────────────────────────────────────────────
 
+/**
+ * Returns `{ ok: true }` when the month is in draft (or does not exist yet).
+ * Returns `{ ok: false, error }` when the month is published — the caller must
+ * unpublish first.
+ *
+ * Mutations (setDayOpen, setDaysOpen, setAllDaysInMonth, setWeekdayDays) call
+ * this to enforce the draft-edit workflow: published months are read-only until
+ * the admin explicitly reverts them to draft.
+ */
+async function requireDraftMonth(
+  monthStart: string,
+): Promise<ActionResult> {
+  const admin = createServiceRoleClient()
+  const { data, error } = await admin
+    .from('availability_months')
+    .select('status')
+    .eq('month_start', monthStart)
+    .maybeSingle()
+
+  if (error) return { ok: false, error: `Nepodařilo se ověřit stav měsíce: ${error.message}` }
+  if (data?.status === 'published') {
+    return {
+      ok: false,
+      error: 'Měsíc je již zveřejněn. Nejdříve ho stáhněte zpět do konceptu, pak proveďte změny a znovu zveřejněte.',
+    }
+  }
+  return { ok: true }
+}
+
 function revalidateAvailability() {
   revalidatePath('/admin/kapacita')
   revalidatePath('/api/availability', 'page')
@@ -192,11 +221,15 @@ export async function unpublishMonth(
  * The day must already exist (created by ensureMonthExists).
  */
 export async function setDayOpen(
-  date:   string,
-  isOpen: boolean,
+  date:       string,
+  isOpen:     boolean,
+  monthStart: string,
 ): Promise<ActionResult> {
   const auth = await requireCapacityAdmin()
   if (!auth.ok) return { ok: false, error: auth.error }
+
+  const draftCheck = await requireDraftMonth(monthStart)
+  if (!draftCheck.ok) return draftCheck
 
   const admin = createServiceRoleClient()
   const { error } = await admin.from('availability_days').update({
@@ -219,13 +252,17 @@ export async function setDayOpen(
  * Used by bulk actions (open all, close all, set by weekday).
  */
 export async function setDaysOpen(
-  dates:  string[],
-  isOpen: boolean,
+  dates:      string[],
+  isOpen:     boolean,
+  monthStart: string,
 ): Promise<ActionResult> {
   if (!dates.length) return { ok: true }
 
   const auth = await requireCapacityAdmin()
   if (!auth.ok) return { ok: false, error: auth.error }
+
+  const draftCheck = await requireDraftMonth(monthStart)
+  if (!draftCheck.ok) return draftCheck
 
   const admin = createServiceRoleClient()
   const now   = new Date().toISOString()
@@ -263,7 +300,7 @@ export async function setAllDaysInMonth(
   if (!ensure.ok) return { ok: false, error: ensure.error }
 
   const dates = (ensure.data?.days ?? []).map((d) => d.date)
-  return setDaysOpen(dates, isOpen)
+  return setDaysOpen(dates, isOpen, monthStart)
 }
 
 // ─── setWeekdayDays ────────────────────────────────────────────────────────────
@@ -281,11 +318,13 @@ export async function setWeekdayDays(
   if (!ensure.ok) return { ok: false, error: ensure.error }
 
   const dates = (ensure.data?.days ?? [])
-    .filter((d) => new Date(d.date + 'T12:00:00Z').getUTCDay() === weekday)
+    .filter((d) => {
+      const day = new Date(d.date + 'T00:00:00Z').getUTCDay()
+      return day === weekday
+    })
     .map((d) => d.date)
 
-  if (!dates.length) return { ok: true }
-  return setDaysOpen(dates, isOpen)
+  return setDaysOpen(dates, isOpen, monthStart)
 }
 
 // ─── getMonthPlannerData ──────────────────────────────────────────────────────
@@ -360,4 +399,84 @@ export async function getUnpublishedFutureMonths(lookaheadMonths = 3): Promise<{
 
   const unpublished = starts.filter((s) => !publishedSet.has(s))
   return { count: unpublished.length, months: unpublished }
+}
+
+// ─── copyPreviousMonth ────────────────────────────────────────────────────────
+
+/**
+ * Copies the open/closed pattern of the previous calendar month into
+ * `targetMonthStart`. Both months must have the same number of weekdays
+ * (they usually differ by ≤1), so the copy is weekday-aligned:
+ *
+ *   • For each date in the target month, find the corresponding date in the
+ *     source month that falls on the same day-of-week.
+ *   • If no such date exists (e.g. a 5th Monday exists in target but not
+ *     source), the day defaults to open.
+ *
+ * Target month must be in draft (created by ensureMonthExists first).
+ * Source month must exist; if it does not, an error is returned.
+ */
+export async function copyPreviousMonth(
+  targetMonthStart: string,
+): Promise<ActionResult> {
+  const auth = await requireCapacityAdmin()
+  if (!auth.ok) return { ok: false, error: auth.error }
+
+  const draftCheck = await requireDraftMonth(targetMonthStart)
+  if (!draftCheck.ok) return draftCheck
+
+  // Derive the previous month start
+  const [year, mon] = targetMonthStart.split('-').map(Number)
+  const prevDate = new Date(Date.UTC(year, mon - 2, 1))   // mon is 1-based, -1 → current, -2 → prev
+  const prevMonthStart = prevDate.toISOString().split('T')[0]
+
+  const admin = createServiceRoleClient()
+
+  // Fetch source days
+  const sourceDays = await getDaysForMonth(prevMonthStart)
+  if (!sourceDays.length) {
+    return { ok: false, error: `Předchozí měsíc (${prevMonthStart}) neobsahuje žádné záznamy. Nejdříve ho vyplňte.` }
+  }
+
+  // Build weekday→is_open map from source (last occurrence wins for that weekday)
+  const weekdayMap = new Map<number, boolean>()
+  for (const d of sourceDays) {
+    const wd = new Date(d.date + 'T00:00:00Z').getUTCDay()
+    weekdayMap.set(wd, d.isOpen)
+  }
+
+  // Fetch target day rows (they exist because ensureMonthExists was called)
+  const targetDays = await getDaysForMonth(targetMonthStart)
+  if (!targetDays.length) {
+    return { ok: false, error: 'Cílový měsíc nebyl inicializován. Uložte ho nejdříve jako koncept.' }
+  }
+
+  // Build update list: set each target day's is_open from weekday map
+  const updates: { date: string; is_open: boolean }[] = targetDays.map((d) => {
+    const wd     = new Date(d.date + 'T00:00:00Z').getUTCDay()
+    const isOpen = weekdayMap.get(wd) ?? true   // default open if weekday not in source
+    return { date: d.date, is_open: isOpen }
+  })
+
+  // Apply in one batch via upsert
+  const now = new Date().toISOString()
+  const { error } = await admin.from('availability_days').upsert(
+    updates.map((u) => ({
+      date:        u.date,
+      month_start: targetMonthStart,
+      is_open:     u.is_open,
+      updated_by:  auth.id,
+      updated_at:  now,
+    })),
+    { onConflict: 'date' },
+  )
+
+  if (error) return { ok: false, error: `Kopírování se nezdařilo: ${error.message}` }
+
+  await auditAvailability(auth.id, 'month_copied', {
+    source: prevMonthStart,
+    target: targetMonthStart,
+  })
+  revalidateAvailability()
+  return { ok: true }
 }

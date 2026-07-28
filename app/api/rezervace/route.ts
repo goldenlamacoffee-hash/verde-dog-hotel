@@ -237,26 +237,54 @@ export async function POST(req: NextRequest) {
   )
 
   if (rpcError) {
-    const msg = rpcError.message ?? ''
-    // The RPC raises UNAVAILABLE: <reason> for capacity / closed-hotel errors.
+    const msg  = rpcError.message ?? ''
+    const code = (rpcError as { code?: string }).code ?? ''
+
+    // P0003 — night is unreleased (month not published)
+    // P0004 — night is explicitly closed by admin
+    // Both are user-actionable "not available" conditions → 409 Conflict.
+    if (code === 'P0003' || code === 'P0004') {
+      return NextResponse.json(
+        { error: msg || 'Požadovaný termín není k dispozici.', code: code === 'P0003' ? 'UNRELEASED' : 'CLOSED' },
+        { status: 409 },
+      )
+    }
+
+    // P0002 — capacity exceeded → 409
+    if (code === 'P0002') {
+      return NextResponse.json(
+        { error: msg || 'Požadovaný termín není k dispozici.', code: 'CAPACITY_EXCEEDED' },
+        { status: 409 },
+      )
+    }
+
+    // P0001 — basic validation (dates, dog count) → 422
+    if (code === 'P0001') {
+      return NextResponse.json(
+        { error: msg || 'Neplatná data formuláře.' },
+        { status: 422 },
+      )
+    }
+
+    // Legacy UNAVAILABLE: prefix format (kept for backwards-compat)
     if (msg.includes('UNAVAILABLE:')) {
       const reason = msg.replace(/.*UNAVAILABLE:\s*/, '').trim()
       return NextResponse.json(
         { error: reason || 'Požadovaný termín není k dispozici.' },
-        { status: 409 }
+        { status: 409 },
       )
     }
-    // The RPC raises MAXIMUM_STAY_EXCEEDED: <reason> when the stay exceeds the
-    // CMS-configured maximum length. Distinct from UNAVAILABLE so the client
-    // can display a specific message rather than a generic "not available" one.
+
+    // MAXIMUM_STAY_EXCEEDED: prefix format (kept for backwards-compat)
     if (msg.includes('MAXIMUM_STAY_EXCEEDED:')) {
       const reason = msg.replace(/.*MAXIMUM_STAY_EXCEEDED:\s*/, '').trim()
       return NextResponse.json(
         { error: reason || 'Maximální délka pobytu byla překročena.', code: 'MAXIMUM_STAY_EXCEEDED' },
-        { status: 422 }
+        { status: 422 },
       )
     }
-    console.error('[verde] create_reservation RPC error:', msg)
+
+    console.error('[verde] create_reservation RPC error:', code, msg)
     return NextResponse.json({ error: 'Interní chyba serveru.' }, { status: 500 })
   }
 
