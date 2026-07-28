@@ -88,7 +88,7 @@ export async function ensureMonthExists(
   monthStart: string,
 ): Promise<ActionResult<{ month: MonthRecord; days: DayRecord[] }>> {
   const auth = await requireCapacityAdmin()
-  if (!auth.ok) return auth
+  if (!auth.ok) return { ok: false, error: auth.error }
 
   const admin = createServiceRoleClient()
 
@@ -139,11 +139,11 @@ export async function publishMonth(
   monthStart: string,
 ): Promise<ActionResult> {
   const auth = await requireCapacityAdmin()
-  if (!auth.ok) return auth
+  if (!auth.ok) return { ok: false, error: auth.error }
 
   // Ensure the month row exists before updating it
   const ensure = await ensureMonthExists(monthStart)
-  if (!ensure.ok) return ensure
+  if (!ensure.ok) return { ok: false, error: ensure.error }
 
   const admin = createServiceRoleClient()
   const { error } = await admin.from('availability_months').update({
@@ -170,7 +170,7 @@ export async function unpublishMonth(
   monthStart: string,
 ): Promise<ActionResult> {
   const auth = await requireCapacityAdmin()
-  if (!auth.ok) return auth
+  if (!auth.ok) return { ok: false, error: auth.error }
 
   const admin = createServiceRoleClient()
   const { error } = await admin.from('availability_months').update({
@@ -196,7 +196,7 @@ export async function setDayOpen(
   isOpen: boolean,
 ): Promise<ActionResult> {
   const auth = await requireCapacityAdmin()
-  if (!auth.ok) return auth
+  if (!auth.ok) return { ok: false, error: auth.error }
 
   const admin = createServiceRoleClient()
   const { error } = await admin.from('availability_days').update({
@@ -225,7 +225,7 @@ export async function setDaysOpen(
   if (!dates.length) return { ok: true }
 
   const auth = await requireCapacityAdmin()
-  if (!auth.ok) return auth
+  if (!auth.ok) return { ok: false, error: auth.error }
 
   const admin = createServiceRoleClient()
   const now   = new Date().toISOString()
@@ -260,7 +260,7 @@ export async function setAllDaysInMonth(
   isOpen:     boolean,
 ): Promise<ActionResult> {
   const ensure = await ensureMonthExists(monthStart)
-  if (!ensure.ok) return ensure
+  if (!ensure.ok) return { ok: false, error: ensure.error }
 
   const dates = (ensure.data?.days ?? []).map((d) => d.date)
   return setDaysOpen(dates, isOpen)
@@ -278,7 +278,7 @@ export async function setWeekdayDays(
   isOpen:     boolean,
 ): Promise<ActionResult> {
   const ensure = await ensureMonthExists(monthStart)
-  if (!ensure.ok) return ensure
+  if (!ensure.ok) return { ok: false, error: ensure.error }
 
   const dates = (ensure.data?.days ?? [])
     .filter((d) => new Date(d.date + 'T12:00:00Z').getUTCDay() === weekday)

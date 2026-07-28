@@ -27,6 +27,7 @@ function resolveAppearance(raw: unknown): CalendarAppearance {
 }
 
 export const metadata = { title: 'Kapacita | VERDE Admin' }
+export const dynamic = 'force-dynamic'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,18 +60,32 @@ async function saveCapacity(formData: FormData) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function CapacityPage() {
+export default async function CapacityPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>
+}) {
+  const { month: monthParam } = await searchParams
+
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const fromStr  = fmtDate(today)
   const toStr    = fmtDate(addDays(today, 30))
 
-  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance, rawMaxStay] = await Promise.all([
+  // Resolve which month the planner should display.
+  // Accepts YYYY-MM-01 format; falls back to current month.
+  const ISO_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])-01$/
+  const plannerMonth = monthParam && ISO_MONTH_RE.test(monthParam)
+    ? monthParam
+    : fmtDate(new Date(today.getFullYear(), today.getMonth(), 1))
+
+  const [capacitySetting, { data: overrides }, occupancyResult, rawAppearance, rawMaxStay, plannerData] = await Promise.all([
     getSiteSetting('capacity'),
     getCapacityOverrides(),
     getOccupancyForRange(fromStr, toStr),
     getSiteSetting('availabilityCalendarAppearance'),
     getSiteSetting('maximumStayNights'),
+    getMonthPlannerData(plannerMonth),
   ])
 
   const calendarAppearance = resolveAppearance(rawAppearance)
@@ -98,6 +113,29 @@ export default async function CapacityPage() {
         title="Kapacita"
         description="Správa maximální kapacity, blokací a přehled obsazenosti"
       />
+
+      {/* ── Month planner ────────────────────────────────────────────────────── */}
+      <div
+        className="rounded-2xl p-5"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}
+      >
+        <h2
+          className="text-xs font-semibold uppercase tracking-wider mb-1"
+          style={{ color: 'var(--admin-text-muted)' }}
+        >
+          Plánování dostupnosti po měsících
+        </h2>
+        <p className="mb-5 text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+          Otevřete nebo uzavřete jednotlivé dny a publikujte měsíc, aby se zobrazil
+          v rezervačním kalendáři. Nepublikované měsíce vidí zákazníci jako nedostupné.
+        </p>
+        <MonthPlanner
+          monthStart={plannerMonth}
+          initialMonth={plannerData.month}
+          initialDays={plannerData.days}
+          nextPublished={plannerData.nextPublished}
+        />
+      </div>
 
       {/* ── Capacity editor ─────────────────────────────────────────────────── */}
       <div

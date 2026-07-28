@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { getDashboardStats, getReservations } from '@/lib/admin/queries'
 import { getOccupancyForDate, getOccupancyForRange } from '@/lib/capacity'
+import { getUnpublishedFutureMonths } from '@/lib/admin/availability-actions'
 import { StatCard } from '@/components/admin/ui/stat-card'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { StatusBadge } from '@/components/admin/ui/status-badge'
@@ -20,12 +21,14 @@ function addDays(iso: string, days: number) {
 export default async function AdminDashboardPage() {
   const today = new Date().toISOString().split('T')[0]
 
-  const [stats, { data: recent }, todayOccupancy, weekOccupancy] = await Promise.all([
+  const [stats, { data: recent }, todayOccupancy, weekOccupancy, unpublishedResult] = await Promise.all([
     getDashboardStats(),
     getReservations({ limit: 8 }),
     getOccupancyForDate(today),
     getOccupancyForRange(today, addDays(today, 7)),
+    getUnpublishedFutureMonths(3),
   ])
+  const unpublishedMonths = unpublishedResult.months
 
   return (
     <div className="space-y-8 max-w-6xl">
@@ -33,6 +36,46 @@ export default async function AdminDashboardPage() {
         title="Dashboard"
         description={new Date().toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
       />
+
+      {/* ── Unpublished months reminder ───────────────────────────────────── */}
+      {unpublishedMonths.length > 0 && (
+        <div
+          className="flex items-start gap-3 rounded-xl px-4 py-3"
+          style={{ background: '#fef3c7', border: '1px solid #fcd34d' }}
+          role="alert"
+        >
+          <svg
+            className="mt-0.5 shrink-0"
+            width="16" height="16" viewBox="0 0 16 16" fill="none"
+            aria-hidden="true"
+          >
+            <path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8z" fill="#92400e"/>
+            <path d="M8 4.5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 018 4.5zm0 6a.875.875 0 110 1.75.875.875 0 010-1.75z" fill="#92400e"/>
+          </svg>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold" style={{ color: '#92400e' }}>
+              {unpublishedMonths.length === 1
+                ? 'Jeden nadcházející měsíc není zveřejněn'
+                : `${unpublishedMonths.length} nadcházející měsíce nejsou zveřejněny`}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#b45309' }}>
+              {unpublishedMonths
+                .map(m =>
+                  new Date(m + 'T00:00:00').toLocaleDateString('cs-CZ', { month: 'long', year: 'numeric' })
+                )
+                .join(', ')}
+              {' — zákazníci tyto termíny nemohou rezervovat.'}
+            </p>
+          </div>
+          <Link
+            href={`/admin/kapacita?month=${unpublishedMonths[0]}`}
+            className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+            style={{ background: '#92400e', color: '#fff' }}
+          >
+            Zveřejnit
+          </Link>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
