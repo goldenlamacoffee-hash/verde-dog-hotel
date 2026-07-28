@@ -12,6 +12,8 @@
  */
 
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { buildDayStateMap } from '@/lib/availability-months'
+import type { MonthStatus, DayState } from '@/lib/types'
 
 // ─── Status constants ──────────────────────────────────────────────────────────
 
@@ -95,10 +97,13 @@ export async function getActiveStatuses(): Promise<string[]> {
 // ─── Per-night occupancy ───────────────────────────────────────────────────────
 
 export interface NightOccupancy {
-  date: string     // ISO date e.g. '2025-08-10'
-  booked: number   // dogs confirmed for that night
-  maxDogs: number  // effective cap (after overrides)
-  free: number     // maxDogs - booked (clamped ≥ 0)
+  date:        string          // ISO date e.g. '2025-08-10'
+  booked:      number          // dogs confirmed for that night
+  maxDogs:     number          // effective cap (after overrides)
+  free:        number          // maxDogs - booked (clamped ≥ 0)
+  /** Day state from availability_months / availability_days. Populated by callers that need it. */
+  dayState?:   DayState        // 'open' | 'closed' | 'unreleased'
+  monthStatus?: MonthStatus    // 'draft' | 'published'
 }
 
 export interface OccupancyError {
@@ -168,7 +173,9 @@ export async function getOccupancyForDate(
 export interface AvailabilityResult {
   available: boolean
   spotsLeft: number
-  reason?: string
+  reason?:    string
+  /** Set when the block is due to a day-state constraint (not a capacity constraint). */
+  dayState?:  DayState
 }
 
 /**
@@ -177,14 +184,42 @@ export interface AvailabilityResult {
  * Fail-closed: any DB error returns available=false.
  */
 export async function checkRangeAvailability(
-  checkIn: string,
-  checkOut: string,
+  checkIn:       string,
+  checkOut:      string,
   dogsRequested: number,
 ): Promise<AvailabilityResult> {
   if (checkIn >= checkOut) {
     return { available: false, spotsLeft: 0, reason: 'Neplatné datum pobytu.' }
   }
 
+  // ── 1. Day-state gate (checked before occupancy) ──────────────────────────
+  // Nights span [checkIn, checkOut). A single unreleased or closed night
+  // blocks the entire stay so clients get an actionable Czech message.
+  try {
+    const stateMap = await buildDayStateMap(checkIn, checkOut)
+    for (const [date, state] of stateMap) {
+      if (state === 'unreleased') {
+        return {
+          available: false,
+          spotsLeft: 0,
+          dayState:  'unreleased',
+          reason:    `Termín ${date} zatím nebyl zveřejněn. Zkuste prosím jiný termín nebo nás kontaktujte přímo.`,
+        }
+      }
+      if (state === 'closed') {
+        return {
+          available: false,
+          spotsLeft: 0,
+          dayState:  'closed',
+          reason:    `Na datum ${date} je hotel uzavřen. Zkuste prosím jiný termín.`,
+        }
+      }
+    }
+  } catch {
+    // Day-state check failed → fall through to occupancy check (fail-open for state, fail-closed for capacity)
+  }
+
+  // ── 2. Capacity gate ──────────────────────────────────────────────────────
   const rows = await getOccupancyForRange(checkIn, checkOut)
 
   if ('error' in rows) {
@@ -196,11 +231,11 @@ export async function checkRangeAvailability(
   }
 
   // Find the tightest night
-  let minFree = Infinity
+  let minFree    = Infinity
   let blockingDate = ''
   for (const row of rows) {
     if (row.free < minFree) {
-      minFree = row.free
+      minFree      = row.free
       blockingDate = row.date
     }
   }

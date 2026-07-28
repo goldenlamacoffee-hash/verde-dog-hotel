@@ -97,6 +97,20 @@ const FIELD_GROUPS: { title: string; fields: FieldDef[] }[] = [
       { key: 'todayBorder', label: 'Orámování', bgKey: undefined },
     ],
   },
+  {
+    title: 'Uzavřeno',
+    fields: [
+      { key: 'closedBackground', label: 'Pozadí', bgKey: undefined },
+      { key: 'closedText',       label: 'Text',   bgKey: 'closedBackground' },
+    ],
+  },
+  {
+    title: 'Nezveřejněno',
+    fields: [
+      { key: 'unreleasedBackground', label: 'Pozadí', bgKey: undefined },
+      { key: 'unreleasedText',       label: 'Text',   bgKey: 'unreleasedBackground' },
+    ],
+  },
 ]
 
 // ─── Single color row ─────────────────────────────────────────────────────────
@@ -197,11 +211,13 @@ interface PreviewProps {
 
 function CalendarPreview({ app }: PreviewProps) {
   const previewCells = [
-    { day: 24, bg: app.availableBackground, text: app.availableText, indicator: null,  label: 'Volno' },
-    { day: 25, bg: app.limitedBackground,   text: app.limitedText,   indicator: '2',   label: 'Zbývají místa' },
-    { day: 26, bg: app.lastBackground,      text: app.lastText,      indicator: '1',   label: 'Poslední místo' },
-    { day: 27, bg: app.fullBackground,      text: app.fullText,      indicator: '×',   label: 'Plno' },
-    { day: 28, bg: app.selectedBackground,  text: app.selectedText,  indicator: null,  label: 'Vybráno' },
+    { day: 24, bg: app.availableBackground,  text: app.availableText,  indicator: null, label: 'Volno' },
+    { day: 25, bg: app.limitedBackground,    text: app.limitedText,    indicator: '2',  label: 'Zbývají místa' },
+    { day: 26, bg: app.lastBackground,       text: app.lastText,       indicator: '1',  label: 'Poslední místo' },
+    { day: 27, bg: app.fullBackground,       text: app.fullText,       indicator: '×',  label: 'Plno' },
+    { day: 28, bg: app.selectedBackground,   text: app.selectedText,   indicator: null, label: 'Vybráno' },
+    { day: 31, bg: app.closedBackground,     text: app.closedText,     indicator: '×',  label: 'Uzavřeno' },
+    { day: 32, bg: app.unreleasedBackground, text: app.unreleasedText, indicator: null, label: 'Nezveřejněno' },
   ]
 
   return (

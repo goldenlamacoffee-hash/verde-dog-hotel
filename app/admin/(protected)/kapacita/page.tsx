@@ -1,10 +1,12 @@
 import { getSiteSetting, getCapacityOverrides } from '@/lib/admin/queries'
 import { updateSiteSetting } from '@/lib/admin/actions'
+import { getMonthPlannerData } from '@/lib/admin/availability-actions'
 import { getOccupancyForRange } from '@/lib/capacity'
 import { PageHeader } from '@/components/admin/ui/page-header'
 import { CapacityOverridesPanel } from '@/components/admin/capacity/capacity-overrides-panel'
 import { CalendarAppearanceEditor } from '@/components/admin/capacity/calendar-appearance-editor'
 import { MaximumStayEditor } from '@/components/admin/capacity/maximum-stay-editor'
+import { MonthPlanner } from '@/components/admin/capacity/month-planner'
 import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
 import type { CalendarAppearance } from '@/lib/types'
 

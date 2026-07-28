@@ -110,6 +110,23 @@ export interface TeamMember {
   role: string
 }
 
+// ─── Availability month / day status ─────────────────────────────────────────
+
+/**
+ * Publication state stored in `availability_months.status`.
+ * - 'draft'     — month is being planned; public calendar treats it as unreleased
+ * - 'published' — month is live; per-day open/closed flags are respected
+ */
+export type MonthStatus = 'draft' | 'published'
+
+/**
+ * Derived per-day state visible to the public calendar and the API.
+ * - 'unreleased' — month is draft or not yet created; shown as greyed out / unavailable
+ * - 'closed'     — month is published but the day is explicitly closed by admin
+ * - 'open'       — month is published and the day is open for arrivals
+ */
+export type DayState = 'open' | 'closed' | 'unreleased'
+
 // ─── Calendar appearance ──────────────────────────────────────────────────────
 
 /**
@@ -129,22 +146,32 @@ export interface CalendarAppearance {
   selectedText:        string
   rangeBackground:     string
   todayBorder:         string
+  /** Explicitly closed day (month published, is_open = false) */
+  closedBackground:    string
+  closedText:          string
+  /** Unreleased day (month draft or not yet created) */
+  unreleasedBackground: string
+  unreleasedText:       string
 }
 
 /** VERDE brand defaults — used as fallback when CMS value is missing/invalid. */
 export const CALENDAR_APPEARANCE_DEFAULTS: CalendarAppearance = {
-  availableBackground: '#E6F4EA',
-  availableText:       '#14532D',
-  limitedBackground:   '#FFF1B8',
-  limitedText:         '#7A4B00',
-  lastBackground:      '#FFD7B5',
-  lastText:            '#8A2C0D',
-  fullBackground:      '#FADDDD',
-  fullText:            '#991B1B',
-  selectedBackground:  '#174C2D',
-  selectedText:        '#FFFFFF',
-  rangeBackground:     '#D5E9DA',
-  todayBorder:         '#315E41',
+  availableBackground:  '#E6F4EA',
+  availableText:        '#14532D',
+  limitedBackground:    '#FFF1B8',
+  limitedText:          '#7A4B00',
+  lastBackground:       '#FFD7B5',
+  lastText:             '#8A2C0D',
+  fullBackground:       '#FADDDD',
+  fullText:             '#991B1B',
+  selectedBackground:   '#174C2D',
+  selectedText:         '#FFFFFF',
+  rangeBackground:      '#D5E9DA',
+  todayBorder:          '#315E41',
+  closedBackground:     '#F1F5F9',
+  closedText:           '#64748B',
+  unreleasedBackground: '#E2E8F0',
+  unreleasedText:       '#94A3B8',
 }
 
 /**
