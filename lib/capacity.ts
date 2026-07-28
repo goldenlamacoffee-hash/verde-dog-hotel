@@ -192,9 +192,11 @@ export async function checkRangeAvailability(
     return { available: false, spotsLeft: 0, reason: 'Neplatné datum pobytu.' }
   }
 
-  // ── 1. Day-state gate (checked before occupancy) ──────────────────────────
+  // ── 1. Day-state gate (FAIL-CLOSED — any DB error blocks the booking) ────
   // Nights span [checkIn, checkOut). A single unreleased or closed night
   // blocks the entire stay so clients get an actionable Czech message.
+  // If the availability tables cannot be read we refuse the booking rather
+  // than assuming every date is open.
   try {
     const stateMap = await buildDayStateMap(checkIn, checkOut)
     for (const [date, state] of stateMap) {
@@ -215,11 +217,17 @@ export async function checkRangeAvailability(
         }
       }
     }
-  } catch {
-    // Day-state check failed → fall through to occupancy check (fail-open for state, fail-closed for capacity)
+  } catch (err) {
+    // FAIL-CLOSED: availability tables unreadable → reject
+    console.error('[verde] availability-months read failed in checkRangeAvailability:', err)
+    return {
+      available: false,
+      spotsLeft: 0,
+      reason: 'Dostupnost termínu se nyní nepodařilo ověřit. Zkuste to prosím znovu.',
+    }
   }
 
-  // ── 2. Capacity gate ──────────────────────────────────────────────────────
+  // ─�� 2. Capacity gate ──────────────────────────────────────────────────────
   const rows = await getOccupancyForRange(checkIn, checkOut)
 
   if ('error' in rows) {

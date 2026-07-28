@@ -30,9 +30,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Datum odjezdu musí být po datu příjezdu.' }, { status: 400 })
   }
 
-  // ── Day-state gate — checked before occupancy ─────────────────────────────
-  // Any unreleased or closed night in the range blocks the stay.
-  // 409 Conflict distinguishes "intentionally unavailable" from 500 DB errors.
+  // ── Day-state gate (FAIL-CLOSED) ─────────────────────────────────────────
+  // Any unreleased or closed night blocks the stay.
+  // 409 = intentionally unavailable. 503 = availability tables unreadable.
   try {
     const stateMap = await buildDayStateMap(arrival, departure)
     for (const [date, state] of stateMap) {
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
             available: false,
             spotsLeft: 0,
             dayState: 'unreleased',
-            reason: `Termín ${date} zatím nebyl zveřejněn. Zkuste prosím jiný termín nebo nás kontaktujte přímo.`,
+            reason: 'Termíny pro zvolený měsíc zatím nebyly zveřejněny.',
           },
           { status: 409 },
         )
@@ -53,14 +53,24 @@ export async function GET(req: Request) {
             available: false,
             spotsLeft: 0,
             dayState: 'closed',
-            reason: `Na datum ${date} je hotel uzavřen. Zkuste prosím jiný termín.`,
+            reason: 'Hotel ve zvoleném termínu nepřijímá nové pobyty.',
           },
           { status: 409 },
         )
       }
     }
-  } catch {
-    // Day-state check failed → fall through to occupancy check (fail-open for state)
+  } catch (err) {
+    // FAIL-CLOSED: availability tables unreadable → 503
+    console.error('[verde] buildDayStateMap failed in /api/availability:', err)
+    return NextResponse.json(
+      {
+        available: false,
+        spotsLeft: 0,
+        code: 'AVAILABILITY_CHECK_FAILED',
+        reason: 'Dostupnost termínu se nyní nepodařilo ověřit. Zkuste to prosím znovu.',
+      },
+      { status: 503 },
+    )
   }
 
   const rows = await getOccupancyForRange(arrival, departure)

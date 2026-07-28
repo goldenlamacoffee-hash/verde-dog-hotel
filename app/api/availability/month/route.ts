@@ -46,11 +46,20 @@ export async function GET(req: Request) {
   const nextYear  = month === 12 ? year + 1 : year
   const toExclusive = `${nextYear}-${pad(nextMonth)}-01`
 
-  const [rows, stateMap, publicationStatus] = await Promise.all([
-    getOccupancyForRange(from, toExclusive),
-    buildDayStateMap(from, toExclusive),
-    getMonthStatus(toMonthStart(from)),
-  ])
+  let rows, stateMap, publicationStatus
+  try {
+    ;[rows, stateMap, publicationStatus] = await Promise.all([
+      getOccupancyForRange(from, toExclusive),
+      buildDayStateMap(from, toExclusive),
+      getMonthStatus(toMonthStart(from)),
+    ])
+  } catch (err) {
+    console.error('[verde] /api/availability/month fetch error:', err)
+    return NextResponse.json(
+      { error: 'Dostupnost termínu se nyní nepodařilo ověřit. Zkuste to prosím znovu.' },
+      { status: 503 },
+    )
+  }
 
   if ('error' in rows) {
     return NextResponse.json(
