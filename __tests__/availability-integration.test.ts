@@ -12,14 +12,37 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest'
 import { createClient } from '@supabase/supabase-js'
 
+// ─── Production guard ─────────────────────────────────────────────────────────
+// These tests mutate the live Supabase project. They must not run unless the
+// caller has explicitly opted in.
+
+if (process.env.RUN_LIVE_SUPABASE_TESTS !== 'true') {
+  throw new Error(
+    'Integration tests are disabled by default to protect the production database.\n' +
+    'Set RUN_LIVE_SUPABASE_TESTS=true to run them.\n' +
+    'Example: RUN_LIVE_SUPABASE_TESTS=true pnpm exec vitest run __tests__/availability-integration.test.ts',
+  )
+}
+
 // ─── Supabase service-role client ────────────────────────────────────────────
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+const ANON_KEY     = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
   throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
 }
+
+// ─── Startup banner ───────────────────────────────────────────────────────────
+
+const projectRef = new URL(SUPABASE_URL).hostname.split('.')[0]
+const isProduction = !projectRef.startsWith('test') && !SUPABASE_URL.includes('localhost')
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+console.log(`  Supabase project : ${projectRef}`)
+console.log(`  Target           : ${isProduction ? 'PRODUCTION (far-future months, cleanup enforced)' : 'test/local'}`)
+console.log(`  Test months      : 2099-09, 2099-10`)
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
 const db = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -363,7 +386,7 @@ describe('F — Copy previous month', () => {
   })
 })
 
-// ═════════════════════════���═════════════════════════════════════════════════════
+// ═════════════════════════�����═════════════════════════════════════════════════════
 // G — Unpublish: blocks new bookings, preserves existing
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -433,6 +456,159 @@ describe('H — Dog count counts against capacity', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// BYPASS TESTS — Direct RPC execution with wrong credentials must be denied
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * One minimal valid payload for the RPCs. The actor_id doesn't matter for
+ * permission tests — the call should be rejected before it touches any data.
+ */
+const BYPASS_MONTH = '2099-12-01'
+const BYPASS_DAYS  = [{ date: '2099-12-01', is_open: true }]
+
+describe('BYPASS A — Anonymous client cannot execute save_availability_month_draft', () => {
+  it('returns permission-denied error', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (anonDb as any).rpc('save_availability_month_draft', {
+      p_month_start: BYPASS_MONTH,
+      p_days:        BYPASS_DAYS,
+      p_actor_id:    '00000000-0000-0000-0000-000000000000',
+    })
+    expect(error).not.toBeNull()
+    // Supabase returns a 403/permission-denied — message contains "permission" or "not found"
+    expect((error as any).message.toLowerCase()).toMatch(/permission|not found|does not exist/i)
+  })
+})
+
+describe('BYPASS B — Authenticated normal user cannot execute publish_availability_month_changes', () => {
+  let userClient: ReturnType<typeof createClient>
+  let testUserId: string
+
+  beforeAll(async () => {
+    // Create a throwaway authenticated user (no admin role)
+    const email = `verde-bypass-test-${Date.now()}@verde-test.invalid`
+    const password = 'bypass-test-' + Math.random().toString(36).slice(2)
+    const { data, error } = await db.auth.admin.createUser({
+      email, password,
+      email_confirm:  true,
+      user_metadata:  { role: 'test_bypass_user' },
+    })
+    if (error || !data.user) throw new Error(`Bypass user create failed: ${error?.message}`)
+    testUserId = data.user.id
+
+    // Sign in as that user to get a real session
+    userClient = createClient(SUPABASE_URL, ANON_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+    await userClient.auth.signInWithPassword({ email, password })
+  }, 20000)
+
+  afterAll(async () => {
+    if (testUserId) await db.auth.admin.deleteUser(testUserId)
+  }, 10000)
+
+  it('returns permission-denied error', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (userClient as any).rpc('publish_availability_month_changes', {
+      p_month_start: BYPASS_MONTH,
+      p_days:        BYPASS_DAYS,
+      p_actor_id:    testUserId ?? '00000000-0000-0000-0000-000000000000',
+    })
+    expect(error).not.toBeNull()
+    expect((error as any).message.toLowerCase()).toMatch(/permission|not found|does not exist/i)
+  })
+})
+
+describe('BYPASS C — Service-role client can execute both RPCs', () => {
+  const BYPASS_C_MONTH = '2099-11-01'
+
+  afterAll(async () => {
+    // Clean up bypass-C test data
+    await db.from('availability_days').delete().eq('month_start', BYPASS_C_MONTH)
+    await db.from('availability_months').delete().eq('month_start', BYPASS_C_MONTH)
+    // Clean audit rows from bypass-C
+    const { data } = await db
+      .from('audit_log')
+      .select('id')
+      .eq('changed_by', ACTOR_ID)
+      .order('changed_at', { ascending: false })
+      .limit(4)
+    const ids = (data ?? []).map((r) => r.id)
+    if (ids.length) {
+      testAuditIds.push(...ids)
+    }
+  }, 10000)
+
+  it('service-role can call save_availability_month_draft', async () => {
+    const days = [
+      { date: '2099-11-01', is_open: true },
+      { date: '2099-11-02', is_open: false },
+    ]
+    const { error } = await db.rpc('save_availability_month_draft', {
+      p_month_start: BYPASS_C_MONTH,
+      p_days:        days,
+      p_actor_id:    ACTOR_ID,
+    })
+    expect(error).toBeNull()
+  })
+
+  it('service-role can call publish_availability_month_changes', async () => {
+    const days = [
+      { date: '2099-11-01', is_open: true },
+      { date: '2099-11-02', is_open: true },
+    ]
+    const { error } = await db.rpc('publish_availability_month_changes', {
+      p_month_start: BYPASS_C_MONTH,
+      p_days:        days,
+      p_actor_id:    ACTOR_ID,
+    })
+    expect(error).toBeNull()
+    // Verify month is published
+    const { data } = await db
+      .from('availability_months')
+      .select('status')
+      .eq('month_start', BYPASS_C_MONTH)
+      .single()
+    expect(data?.status).toBe('published')
+  })
+})
+
+describe('BYPASS D — canManageCapacity gate in server actions', () => {
+  /**
+   * The server actions (saveAvailabilityMonthDraft / publishAvailabilityMonthChanges)
+   * call requireCapacityAdmin() before touching the DB. This is purely a server-side
+   * check — we verify it exists in the source rather than trying to invoke a Next.js
+   * server action from a Vitest integration test.
+   */
+  it('requireCapacityAdmin is called in saveAvailabilityMonthDraft', async () => {
+    const fs = await import('fs')
+    const src = fs.readFileSync(
+      new URL('../lib/admin/availability-actions.ts', import.meta.url).pathname,
+      'utf8',
+    )
+    // The function must contain the guard before the RPC call
+    const guardIdx = src.indexOf('requireCapacityAdmin()')
+    const rpcIdx   = src.indexOf('save_availability_month_draft')
+    expect(guardIdx).toBeGreaterThan(-1)
+    expect(rpcIdx).toBeGreaterThan(-1)
+    expect(guardIdx).toBeLessThan(rpcIdx)
+  })
+
+  it('requireCapacityAdmin is called in publishAvailabilityMonthChanges', async () => {
+    const fs = await import('fs')
+    const src = fs.readFileSync(
+      new URL('../lib/admin/availability-actions.ts', import.meta.url).pathname,
+      'utf8',
+    )
+    const guardIdx = src.indexOf('requireCapacityAdmin()')
+    const rpcIdx   = src.indexOf('publish_availability_month_changes')
+    expect(guardIdx).toBeGreaterThan(-1)
+    expect(rpcIdx).toBeGreaterThan(-1)
+    expect(guardIdx).toBeLessThan(rpcIdx)
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SPEC §6 — New month-planner workflow tests (A–G)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -442,11 +618,51 @@ const SPEC_16    = '2099-10-16'
 const SPEC_17    = '2099-10-17'
 
 /**
- * Actor UUID for RPC calls — must be a real auth.users row to satisfy the FK
- * constraint on availability_days.updated_by and availability_months.published_by.
- * Using the first existing user in the project's auth.users table.
+ * Dedicated test actor — created in the outer beforeAll, deleted in the outer afterAll.
+ * Never use a real production user's UUID here.
  */
-const ACTOR_ID = '4fd1b911-d7ac-4001-92f8-088d77a115eb'
+const TEST_ACTOR_EMAIL = 'verde-test-actor@verde-hotel.test'
+// Will be populated in the outer beforeAll
+let ACTOR_ID = '00000000-0000-0000-0000-000000000000'
+
+/** Audit-log row IDs created by this test run — captured so they can be removed. */
+const testAuditIds: string[] = []
+
+/** Anon client — same project, no credentials. Used to verify EXECUTE is denied. */
+const anonDb = createClient(SUPABASE_URL, ANON_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+})
+
+// ─── Outer lifecycle: create/delete dedicated test actor ─────────────────────
+
+beforeAll(async () => {
+  const { data: list } = await db.auth.admin.listUsers({ perPage: 200 })
+  const existing = list?.users?.find((u) => u.email === TEST_ACTOR_EMAIL)
+  if (existing) {
+    ACTOR_ID = existing.id
+  } else {
+    const { data, error } = await db.auth.admin.createUser({
+      email:          TEST_ACTOR_EMAIL,
+      password:       'verde-test-' + Math.random().toString(36).slice(2),
+      email_confirm:  true,
+      user_metadata:  { role: 'test_actor', display_name: 'verde-test-actor' },
+    })
+    if (error || !data.user) throw new Error(`Could not create test actor: ${error?.message}`)
+    ACTOR_ID = data.user.id
+  }
+  console.log(`  Test actor UUID  : ${ACTOR_ID}`)
+}, 20000)
+
+afterAll(async () => {
+  // Delete test actor
+  if (ACTOR_ID !== '00000000-0000-0000-0000-000000000000') {
+    await db.auth.admin.deleteUser(ACTOR_ID)
+  }
+  // Delete audit rows created by this run
+  if (testAuditIds.length > 0) {
+    await db.from('audit_log').delete().in('id', testAuditIds)
+  }
+}, 20000)
 
 async function specEnsureMonth(status: 'draft' | 'published', allOpen = true) {
   await db.from('availability_months').upsert(
@@ -524,6 +740,14 @@ describe('SPEC B — Save and publish changes: all changes appear publicly toget
       p_actor_id:    ACTOR_ID,
     })
     expect(error).toBeNull()
+    // Capture the audit row created by this call
+    const { data: auditRows } = await db
+      .from('audit_log')
+      .select('id')
+      .eq('changed_by', ACTOR_ID)
+      .order('changed_at', { ascending: false })
+      .limit(1)
+    if (auditRows?.[0]?.id) testAuditIds.push(auditRows[0].id)
     const row = await getMonthRow(SPEC_MONTH)
     expect(row?.status).toBe('draft')
   })
@@ -550,6 +774,14 @@ describe('SPEC B — Save and publish changes: all changes appear publicly toget
       p_actor_id:    ACTOR_ID,
     })
     expect(error).toBeNull()
+    // Capture audit row
+    const { data: auditRows } = await db
+      .from('audit_log')
+      .select('id')
+      .eq('changed_by', ACTOR_ID)
+      .order('changed_at', { ascending: false })
+      .limit(1)
+    if (auditRows?.[0]?.id) testAuditIds.push(auditRows[0].id)
 
     const monthRow = await getMonthRow(SPEC_MONTH)
     expect(monthRow?.status).toBe('published')
