@@ -10,10 +10,12 @@
  * Allowed roles for capacity management: owner, admin, reception
  * (see canManageCapacity in lib/auth/roles.ts).
  *
- * After every successful mutation:
- *  - revalidatePath is called for both the admin planner page and the
- *    public API routes so the calendar reflects changes immediately.
- *  - An audit_log entry is written (action='UPDATE', event in new_data).
+ * KEY DESIGN:
+ *   - Individual day-cell clicks are LOCAL ONLY (no DB per-click).
+ *   - Full month state is persisted atomically via saveAvailabilityMonthDraft
+ *     or publishAvailabilityMonthChanges (single RPC = single transaction).
+ *   - Public /rezervace is ONLY revalidated after a successful publish.
+ *   - A draft save revalidates the admin planner only.
  */
 
 import { revalidatePath } from 'next/cache'
@@ -28,7 +30,7 @@ import {
   type DayRecord,
 } from '@/lib/availability-months'
 
-// ─── Shared result type (mirrors user-actions pattern) ───────────────────────
+// ─── Shared result type ───────────────────────────────────────────────────────
 
 export interface ActionResult<T = undefined> {
   ok: boolean
@@ -66,37 +68,15 @@ async function auditAvailability(
   })
 }
 
-// ─── Revalidation helper ──────────────────────────────────────────────────────
+// ─── Revalidation helpers ─────────────────────────────────────────────────────
 
-/**
- * Returns `{ ok: true }` when the month is in draft (or does not exist yet).
- * Returns `{ ok: false, error }` when the month is published — the caller must
- * unpublish first.
- *
- * Mutations (setDayOpen, setDaysOpen, setAllDaysInMonth, setWeekdayDays) call
- * this to enforce the draft-edit workflow: published months are read-only until
- * the admin explicitly reverts them to draft.
- */
-async function requireDraftMonth(
-  monthStart: string,
-): Promise<ActionResult> {
-  const admin = createServiceRoleClient()
-  const { data, error } = await admin
-    .from('availability_months')
-    .select('status')
-    .eq('month_start', monthStart)
-    .maybeSingle()
-
-  if (error) return { ok: false, error: `Nepodařilo se ověřit stav měsíce: ${error.message}` }
-  if (data?.status === 'published') {
-    return {
-      ok: false,
-      error: 'Měsíc je již zveřejněn. Nejdříve ho stáhněte zpět do konceptu, pak proveďte změny a znovu zveřejněte.',
-    }
-  }
-  return { ok: true }
+/** Revalidates admin planner only — used after draft saves. */
+function revalidateAdminOnly() {
+  revalidatePath('/admin/kapacita')
+  revalidatePath('/api/availability/month', 'page')
 }
 
+/** Revalidates both admin and public booking — used after publish only. */
 function revalidateAvailability() {
   revalidatePath('/admin/kapacita')
   revalidatePath('/api/availability', 'page')
@@ -109,9 +89,7 @@ function revalidateAvailability() {
 /**
  * Idempotently creates a month row (status='draft') + all day rows (is_open=true)
  * if the month does not already exist.
- * Returns the month record.
- *
- * Called implicitly before any month mutation to avoid FK errors.
+ * Returns the month record and all day rows.
  */
 export async function ensureMonthExists(
   monthStart: string,
@@ -121,7 +99,6 @@ export async function ensureMonthExists(
 
   const admin = createServiceRoleClient()
 
-  // ── 1. Upsert month row (do nothing if already exists) ───────────────────
   const existing = await getMonthStatus(monthStart)
   if (!existing) {
     const { error: mErr } = await admin.from('availability_months').insert({
@@ -130,7 +107,6 @@ export async function ensureMonthExists(
     })
     if (mErr) return { ok: false, error: `Nepodařilo se vytvořit měsíc: ${mErr.message}` }
 
-    // ── 2. Fill all days as open ────────────────────────────────────────────
     const d     = new Date(monthStart + 'T00:00:00Z')
     const year  = d.getUTCFullYear()
     const month = d.getUTCMonth()
@@ -143,9 +119,12 @@ export async function ensureMonthExists(
     if (dErr) return { ok: false, error: `Nepodařilo se vytvořit dny: ${dErr.message}` }
   }
 
-  // Fetch current state to return
   const [monthRow, dayRows] = await Promise.all([
-    admin.from('availability_months').select('month_start, status, published_at').eq('month_start', monthStart).single(),
+    admin
+      .from('availability_months')
+      .select('month_start, status, published_at')
+      .eq('month_start', monthStart)
+      .single(),
     getDaysForMonth(monthStart),
   ])
 
@@ -158,11 +137,86 @@ export async function ensureMonthExists(
   return { ok: true, data: { month: record, days: dayRows } }
 }
 
-// ─── publishMonth ─────────────────────────────────────────────────────────────
+// ─── saveAvailabilityMonthDraft ───────────────────────────────────────────────
 
 /**
- * Sets a month's status to 'published' and records published_at + published_by.
- * Ensures the month row exists first.
+ * Atomically persists the complete month state as a draft (status stays 'draft').
+ * Calls the save_availability_month_draft RPC which runs in one transaction:
+ *   - validates all dates belong to p_month_start
+ *   - upserts availability_months (status='draft')
+ *   - upserts all availability_days rows
+ *   - writes one audit_log entry
+ *
+ * Public /rezervace is NOT revalidated — customers see the last published version.
+ * Only the admin planner cache is cleared.
+ */
+export async function saveAvailabilityMonthDraft(
+  monthStart: string,
+  days: Array<{ date: string; is_open: boolean }>,
+): Promise<ActionResult> {
+  const auth = await requireCapacityAdmin()
+  if (!auth.ok) return { ok: false, error: auth.error }
+
+  if (!days.length) return { ok: false, error: 'Žádné dny k uložení.' }
+
+  const admin = createServiceRoleClient()
+  const { error } = await admin.rpc('save_availability_month_draft', {
+    p_month_start: monthStart,
+    p_days:        days,
+    p_actor_id:    auth.id,
+  })
+
+  if (error) {
+    return { ok: false, error: `Uložení konceptu se nezdařilo: ${error.message}` }
+  }
+
+  revalidateAdminOnly()
+  return { ok: true }
+}
+
+// ─── publishAvailabilityMonthChanges ─────────────────────────────────────────
+
+/**
+ * Atomically saves the complete month state AND sets status='published'.
+ * Calls the publish_availability_month_changes RPC which runs in one transaction:
+ *   - validates all dates belong to p_month_start
+ *   - upserts availability_months (status='published', published_at, published_by)
+ *   - upserts all availability_days rows
+ *   - writes one audit_log entry with changed-day count
+ *
+ * Public /rezervace IS revalidated after a successful commit.
+ * All changes become publicly visible atomically.
+ */
+export async function publishAvailabilityMonthChanges(
+  monthStart: string,
+  days: Array<{ date: string; is_open: boolean }>,
+): Promise<ActionResult> {
+  const auth = await requireCapacityAdmin()
+  if (!auth.ok) return { ok: false, error: auth.error }
+
+  if (!days.length) return { ok: false, error: 'Žádné dny k zveřejnění.' }
+
+  const admin = createServiceRoleClient()
+  const { error } = await admin.rpc('publish_availability_month_changes', {
+    p_month_start: monthStart,
+    p_days:        days,
+    p_actor_id:    auth.id,
+  })
+
+  if (error) {
+    return { ok: false, error: `Zveřejnění se nezdařilo: ${error.message}` }
+  }
+
+  revalidateAvailability()
+  return { ok: true }
+}
+
+// ─── publishMonth (legacy — status-only flip) ─────────────────────────────────
+
+/**
+ * Sets a month's status to 'published' without touching day rows.
+ * Kept for the existing "Zveřejnit" button on a fully-saved draft.
+ * New code should prefer publishAvailabilityMonthChanges.
  */
 export async function publishMonth(
   monthStart: string,
@@ -170,7 +224,6 @@ export async function publishMonth(
   const auth = await requireCapacityAdmin()
   if (!auth.ok) return { ok: false, error: auth.error }
 
-  // Ensure the month row exists before updating it
   const ensure = await ensureMonthExists(monthStart)
   if (!ensure.ok) return { ok: false, error: ensure.error }
 
@@ -193,7 +246,7 @@ export async function publishMonth(
 
 /**
  * Sets a month's status back to 'draft'.
- * The public calendar will treat it as unreleased.
+ * The public calendar will treat it as unreleased immediately.
  */
 export async function unpublishMonth(
   monthStart: string,
@@ -214,117 +267,190 @@ export async function unpublishMonth(
   return { ok: true }
 }
 
-// ─── setDayOpen ───────────────────────────────────────────────────────────────
+// ─── copyPreviousMonthExact ───────────────────────────────────────────────────
 
 /**
- * Toggles a single day open or closed.
- * The day must already exist (created by ensureMonthExists).
+ * Copies the open/closed state of the previous calendar month into local
+ * (client) state via EXACT day-to-day mapping:
+ *
+ *   source day 1  → target day 1
+ *   source day 2  → target day 2
+ *   ...
+ *   source day N  → target day N
+ *
+ * For a LONGER destination month (more days than source):
+ *   extra destination days default to CLOSED.
+ *
+ * For a SHORTER destination month (fewer days than source):
+ *   source days beyond destination length are ignored.
+ *
+ * Returns the mapped day array. The caller must store it locally and
+ * save via saveAvailabilityMonthDraft or publishAvailabilityMonthChanges.
+ * Nothing is written to the database here.
  */
-export async function setDayOpen(
-  date:       string,
-  isOpen:     boolean,
-  monthStart: string,
-): Promise<ActionResult> {
+export async function copyPreviousMonthExact(
+  targetMonthStart: string,
+): Promise<ActionResult<Array<{ date: string; is_open: boolean }>>> {
   const auth = await requireCapacityAdmin()
   if (!auth.ok) return { ok: false, error: auth.error }
 
-  const draftCheck = await requireDraftMonth(monthStart)
-  if (!draftCheck.ok) return draftCheck
+  const [year, mon] = targetMonthStart.split('-').map(Number)
+  const prevDate = new Date(Date.UTC(year, mon - 2, 1))
+  const prevMonthStart = prevDate.toISOString().split('T')[0]
 
-  const admin = createServiceRoleClient()
-  const { error } = await admin.from('availability_days').update({
-    is_open:    isOpen,
-    updated_by: auth.id,
-    updated_at: new Date().toISOString(),
-  }).eq('date', date)
+  const [sourceDays, targetDays] = await Promise.all([
+    getDaysForMonth(prevMonthStart),
+    getDaysForMonth(targetMonthStart),
+  ])
 
-  if (error) return { ok: false, error: `Nepodařilo se nastavit den: ${error.message}` }
+  if (!sourceDays.length) {
+    return {
+      ok: false,
+      error: `Předchozí měsíc (${prevMonthStart}) neobsahuje žádné záznamy. Nejdříve ho vyplňte.`,
+    }
+  }
+  if (!targetDays.length) {
+    return {
+      ok: false,
+      error: 'Cílový měsíc nebyl inicializován. Uložte ho nejdříve jako koncept.',
+    }
+  }
 
-  await auditAvailability(auth.id, 'day_toggled', { date, is_open: isOpen })
-  revalidateAvailability()
-  return { ok: true }
-}
-
-// ─── setDaysOpen ──────────────────────────────────────────────────────────────
-
-/**
- * Batch-sets multiple days to the same open/closed state in a single update.
- * Used by bulk actions (open all, close all, set by weekday).
- */
-export async function setDaysOpen(
-  dates:      string[],
-  isOpen:     boolean,
-  monthStart: string,
-): Promise<ActionResult> {
-  if (!dates.length) return { ok: true }
-
-  const auth = await requireCapacityAdmin()
-  if (!auth.ok) return { ok: false, error: auth.error }
-
-  const draftCheck = await requireDraftMonth(monthStart)
-  if (!draftCheck.ok) return draftCheck
-
-  const admin = createServiceRoleClient()
-  const now   = new Date().toISOString()
-
-  // Batch update using in() filter — single query regardless of date count
-  const { error } = await admin.from('availability_days').update({
-    is_open:    isOpen,
-    updated_by: auth.id,
-    updated_at: now,
-  }).in('date', dates)
-
-  if (error) return { ok: false, error: `Hromadná aktualizace se nezdařila: ${error.message}` }
-
-  await auditAvailability(auth.id, 'days_batch_toggled', {
-    count:   dates.length,
-    is_open: isOpen,
-    first:   dates[0],
-    last:    dates[dates.length - 1],
+  // Exact positional copy: source[i] → target[i] (1-indexed day-of-month)
+  const result = targetDays.map((targetDay, i) => {
+    const sourceDay = sourceDays[i]          // undefined if source shorter
+    return {
+      date:    targetDay.date,
+      is_open: sourceDay ? sourceDay.isOpen : false,   // extra days → closed
+    }
   })
-  revalidateAvailability()
-  return { ok: true }
+
+  await auditAvailability(auth.id, 'month_copied_exact', {
+    source: prevMonthStart,
+    target: targetMonthStart,
+    days:   result.length,
+  })
+
+  return { ok: true, data: result }
 }
 
-// ─── setAllDaysInMonth ────────────────────────────────────────────────────────
+// ─── copyPreviousMonthWeekdayPattern (separate action, no silent substitution) ─
 
 /**
- * Sets ALL days in a month to the same is_open state.
- * Convenience wrapper around setDaysOpen for the "Otevřít vše / Zavřít vše" buttons.
+ * Copies the WEEKDAY PATTERN of the previous calendar month (Mon→open/closed,
+ * Tue→open/closed, …) into local state. Each target day gets the is_open value
+ * of the same weekday from the source.
+ *
+ * The last occurrence of each weekday in the source month is used. For a weekday
+ * that does not appear in the source, the target day defaults to open.
+ *
+ * Returns the mapped day array for local state — nothing is written to the DB.
  */
-export async function setAllDaysInMonth(
-  monthStart: string,
-  isOpen:     boolean,
-): Promise<ActionResult> {
-  const ensure = await ensureMonthExists(monthStart)
-  if (!ensure.ok) return { ok: false, error: ensure.error }
+export async function copyPreviousMonthWeekdayPattern(
+  targetMonthStart: string,
+): Promise<ActionResult<Array<{ date: string; is_open: boolean }>>> {
+  const auth = await requireCapacityAdmin()
+  if (!auth.ok) return { ok: false, error: auth.error }
 
-  const dates = (ensure.data?.days ?? []).map((d) => d.date)
-  return setDaysOpen(dates, isOpen, monthStart)
+  const [year, mon] = targetMonthStart.split('-').map(Number)
+  const prevDate = new Date(Date.UTC(year, mon - 2, 1))
+  const prevMonthStart = prevDate.toISOString().split('T')[0]
+
+  const [sourceDays, targetDays] = await Promise.all([
+    getDaysForMonth(prevMonthStart),
+    getDaysForMonth(targetMonthStart),
+  ])
+
+  if (!sourceDays.length) {
+    return {
+      ok: false,
+      error: `Předchozí měsíc (${prevMonthStart}) neobsahuje žádné záznamy.`,
+    }
+  }
+  if (!targetDays.length) {
+    return {
+      ok: false,
+      error: 'Cílový měsíc nebyl inicializován.',
+    }
+  }
+
+  // Build weekday → is_open from source (last occurrence wins)
+  const weekdayMap = new Map<number, boolean>()
+  for (const d of sourceDays) {
+    const wd = new Date(d.date + 'T00:00:00Z').getUTCDay()
+    weekdayMap.set(wd, d.isOpen)
+  }
+
+  const result = targetDays.map((d) => {
+    const wd = new Date(d.date + 'T00:00:00Z').getUTCDay()
+    return { date: d.date, is_open: weekdayMap.get(wd) ?? true }
+  })
+
+  await auditAvailability(auth.id, 'month_copied_weekday', {
+    source: prevMonthStart,
+    target: targetMonthStart,
+    days:   result.length,
+  })
+
+  return { ok: true, data: result }
 }
 
-// ─── setWeekdayDays ────────────────────────────────────────────────────────────
+// ─── getOccupancyForDate ──────────────────────────────────────────────────────
 
 /**
- * Sets all days in a month matching a given weekday (0=Sun … 6=Sat) to is_open.
- * Used by the "Každé pondělí / úterý / …" bulk controls in the planner.
+ * Returns the number of booked dogs and the effective capacity for a single date.
+ * Used by the confirmation dialog when closing a date that has existing bookings.
  */
-export async function setWeekdayDays(
-  monthStart: string,
-  weekday:    0 | 1 | 2 | 3 | 4 | 5 | 6,
-  isOpen:     boolean,
-): Promise<ActionResult> {
-  const ensure = await ensureMonthExists(monthStart)
-  if (!ensure.ok) return { ok: false, error: ensure.error }
+export async function getOccupancyForDate(
+  date: string,
+): Promise<ActionResult<{ booked: number; capacity: number }>> {
+  const auth = await requireCapacityAdmin()
+  if (!auth.ok) return { ok: false, error: auth.error }
 
-  const dates = (ensure.data?.days ?? [])
-    .filter((d) => {
-      const day = new Date(d.date + 'T00:00:00Z').getUTCDay()
-      return day === weekday
-    })
-    .map((d) => d.date)
+  const admin = createServiceRoleClient()
 
-  return setDaysOpen(dates, isOpen, monthStart)
+  const [bookedResult, capacityResult] = await Promise.all([
+    // Count dogs from active/pending reservations covering this night
+    admin.rpc('get_booked_dogs_for_date', { p_date: date }).single(),
+    admin.from('site_settings').select('value').eq('key', 'capacity').single(),
+  ])
+
+  if (bookedResult.error) {
+    // Fall back to a direct query if the RPC doesn't exist yet
+    const { data: resData } = await admin
+      .from('reservations')
+      .select('id')
+      .lte('arrival_date', date)
+      .gt('departure_date', date)
+      .not('status', 'in', '(cancelled,rejected,checked_out)')
+
+    const ids = (resData ?? []).map((r) => r.id)
+    let booked = 0
+    if (ids.length) {
+      const { data: dogData } = await admin
+        .from('reservation_dogs')
+        .select('dog_id')
+        .in('reservation_id', ids)
+      booked = dogData?.length ?? 0
+    }
+
+    const cap = capacityResult.data?.value
+    const capacity =
+      typeof cap === 'object' && cap !== null && 'maxDogs' in cap
+        ? Number((cap as { maxDogs: number }).maxDogs)
+        : 4
+
+    return { ok: true, data: { booked, capacity } }
+  }
+
+  const booked = (bookedResult.data as { count: number } | null)?.count ?? 0
+  const cap = capacityResult.data?.value
+  const capacity =
+    typeof cap === 'object' && cap !== null && 'maxDogs' in cap
+      ? Number((cap as { maxDogs: number }).maxDogs)
+      : 4
+
+  return { ok: true, data: { booked, capacity } }
 }
 
 // ─── getMonthPlannerData ──────────────────────────────────────────────────────
@@ -334,23 +460,27 @@ export async function setWeekdayDays(
  *  - month record (status, publishedAt)
  *  - all day records for the month
  *  - whether the next month has been published (for the reminder banner)
- *
- * NOT a mutation — does not call requireCapacityAdmin; the planner page's
- * own requireAdmin gating is sufficient.
  */
 export async function getMonthPlannerData(monthStart: string): Promise<{
-  month:          MonthRecord | null
-  days:           DayRecord[]
-  nextPublished:  boolean
+  month:         MonthRecord | null
+  days:          DayRecord[]
+  nextPublished: boolean
 }> {
   const admin = createServiceRoleClient()
-
   const nextStart = nextMonthStart(monthStart)
 
   const [monthRow, days, nextMonthRow] = await Promise.all([
-    admin.from('availability_months').select('month_start, status, published_at').eq('month_start', monthStart).maybeSingle(),
+    admin
+      .from('availability_months')
+      .select('month_start, status, published_at')
+      .eq('month_start', monthStart)
+      .maybeSingle(),
     getDaysForMonth(monthStart),
-    admin.from('availability_months').select('status').eq('month_start', nextStart).maybeSingle(),
+    admin
+      .from('availability_months')
+      .select('status')
+      .eq('month_start', nextStart)
+      .maybeSingle(),
   ])
 
   const month: MonthRecord | null = monthRow.data
@@ -370,17 +500,12 @@ export async function getMonthPlannerData(monthStart: string): Promise<{
 
 // ─── getUnpublishedFutureMonths ───────────────────────────────────────────────
 
-/**
- * Returns the count and list of months in the next N months that are not
- * yet published. Used by the dashboard reminder banner.
- */
 export async function getUnpublishedFutureMonths(lookaheadMonths = 3): Promise<{
   count: number
-  months: string[]   // 'YYYY-MM-01' strings
+  months: string[]
 }> {
   const admin = createServiceRoleClient()
 
-  // Build list of the next N month starts
   const starts: string[] = []
   const now = new Date()
   for (let i = 0; i < lookaheadMonths; i++) {
@@ -401,82 +526,50 @@ export async function getUnpublishedFutureMonths(lookaheadMonths = 3): Promise<{
   return { count: unpublished.length, months: unpublished }
 }
 
-// ─── copyPreviousMonth ────────────────────────────────────────────────────────
+// ─── Legacy per-day mutations (kept for backwards-compat if still called) ────
 
 /**
- * Copies the open/closed pattern of the previous calendar month into
- * `targetMonthStart`. Both months must have the same number of weekdays
- * (they usually differ by ≤1), so the copy is weekday-aligned:
- *
- *   • For each date in the target month, find the corresponding date in the
- *     source month that falls on the same day-of-week.
- *   • If no such date exists (e.g. a 5th Monday exists in target but not
- *     source), the day defaults to open.
- *
- * Target month must be in draft (created by ensureMonthExists first).
- * Source month must exist; if it does not, an error is returned.
+ * @deprecated Individual cell mutations are now local-only.
+ * Use saveAvailabilityMonthDraft / publishAvailabilityMonthChanges instead.
  */
-export async function copyPreviousMonth(
-  targetMonthStart: string,
+export async function setDayOpen(
+  date:       string,
+  isOpen:     boolean,
+  monthStart: string,
 ): Promise<ActionResult> {
-  const auth = await requireCapacityAdmin()
-  if (!auth.ok) return { ok: false, error: auth.error }
+  return saveAvailabilityMonthDraft(monthStart, [{ date, is_open: isOpen }])
+}
 
-  const draftCheck = await requireDraftMonth(targetMonthStart)
-  if (!draftCheck.ok) return draftCheck
-
-  // Derive the previous month start
-  const [year, mon] = targetMonthStart.split('-').map(Number)
-  const prevDate = new Date(Date.UTC(year, mon - 2, 1))   // mon is 1-based, -1 → current, -2 → prev
-  const prevMonthStart = prevDate.toISOString().split('T')[0]
-
-  const admin = createServiceRoleClient()
-
-  // Fetch source days
-  const sourceDays = await getDaysForMonth(prevMonthStart)
-  if (!sourceDays.length) {
-    return { ok: false, error: `Předchozí měsíc (${prevMonthStart}) neobsahuje žádné záznamy. Nejdříve ho vyplňte.` }
-  }
-
-  // Build weekday→is_open map from source (last occurrence wins for that weekday)
-  const weekdayMap = new Map<number, boolean>()
-  for (const d of sourceDays) {
-    const wd = new Date(d.date + 'T00:00:00Z').getUTCDay()
-    weekdayMap.set(wd, d.isOpen)
-  }
-
-  // Fetch target day rows (they exist because ensureMonthExists was called)
-  const targetDays = await getDaysForMonth(targetMonthStart)
-  if (!targetDays.length) {
-    return { ok: false, error: 'Cílový měsíc nebyl inicializován. Uložte ho nejdříve jako koncept.' }
-  }
-
-  // Build update list: set each target day's is_open from weekday map
-  const updates: { date: string; is_open: boolean }[] = targetDays.map((d) => {
-    const wd     = new Date(d.date + 'T00:00:00Z').getUTCDay()
-    const isOpen = weekdayMap.get(wd) ?? true   // default open if weekday not in source
-    return { date: d.date, is_open: isOpen }
-  })
-
-  // Apply in one batch via upsert
-  const now = new Date().toISOString()
-  const { error } = await admin.from('availability_days').upsert(
-    updates.map((u) => ({
-      date:        u.date,
-      month_start: targetMonthStart,
-      is_open:     u.is_open,
-      updated_by:  auth.id,
-      updated_at:  now,
-    })),
-    { onConflict: 'date' },
+export async function setDaysOpen(
+  dates:      string[],
+  isOpen:     boolean,
+  monthStart: string,
+): Promise<ActionResult> {
+  return saveAvailabilityMonthDraft(
+    monthStart,
+    dates.map((date) => ({ date, is_open: isOpen })),
   )
+}
 
-  if (error) return { ok: false, error: `Kopírování se nezdařilo: ${error.message}` }
+export async function setAllDaysInMonth(
+  monthStart: string,
+  isOpen:     boolean,
+): Promise<ActionResult> {
+  const ensure = await ensureMonthExists(monthStart)
+  if (!ensure.ok) return { ok: false, error: ensure.error }
+  const dates = (ensure.data?.days ?? []).map((d) => d.date)
+  return setDaysOpen(dates, isOpen, monthStart)
+}
 
-  await auditAvailability(auth.id, 'month_copied', {
-    source: prevMonthStart,
-    target: targetMonthStart,
-  })
-  revalidateAvailability()
-  return { ok: true }
+export async function setWeekdayDays(
+  monthStart: string,
+  weekday:    0 | 1 | 2 | 3 | 4 | 5 | 6,
+  isOpen:     boolean,
+): Promise<ActionResult> {
+  const ensure = await ensureMonthExists(monthStart)
+  if (!ensure.ok) return { ok: false, error: ensure.error }
+  const dates = (ensure.data?.days ?? [])
+    .filter((d) => new Date(d.date + 'T00:00:00Z').getUTCDay() === weekday)
+    .map((d) => d.date)
+  return setDaysOpen(dates, isOpen, monthStart)
 }

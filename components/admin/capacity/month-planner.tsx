@@ -3,53 +3,66 @@
 /**
  * MonthPlanner — admin UI for controlling per-day availability.
  *
- * Draft-edit workflow
- * ──────────────────
- * A published month is read-only: day toggles and bulk actions are disabled
- * until the admin explicitly unpublishes ("Stáhnout do konceptu"). Once edits
- * are done the admin re-publishes. This prevents accidental live mutations.
+ * Workflow
+ * ────────
+ * ALL day-cell clicks are LOCAL ONLY — nothing is written to the database
+ * until the admin explicitly saves.
  *
- * The server actions enforce the same rule at the DB layer — the UI guard is
- * UX-only and not a security boundary.
+ * Published month:
+ *   - Shows "Upravit zveřejněný měsíc" button
+ *   - Clicking enters edit mode: copy published state to local draft
+ *   - "Změny zatím nejsou veřejné." warning shown
+ *   - "Zrušit úpravy" discards local changes (restores published state)
+ *   - "Uložit a zveřejnit změny" calls publishAvailabilityMonthChanges (atomic)
+ *
+ * Draft month:
+ *   - Always in edit mode
+ *   - "Uložit koncept" calls saveAvailabilityMonthDraft (atomic, no public revalidation)
+ *   - "Zveřejnit měsíc" calls publishAvailabilityMonthChanges (atomic, revalidates /rezervace)
+ *
+ * Closing a date with active bookings shows a confirmation dialog first.
+ * The dialog shows how many dogs are already booked and explains that closing
+ * only blocks NEW reservations — existing ones are preserved.
  */
 
-import { useCallback, useState, useTransition } from 'react'
+import { useCallback, useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronLeft, ChevronRight,
   Globe, EyeOff,
   CheckSquare, XSquare,
   Loader2, AlertTriangle, CheckCircle2,
-  CalendarCheck, Copy, Lock,
+  CalendarCheck, Copy, Pencil, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  publishMonth,
-  unpublishMonth,
-  setDayOpen,
-  setAllDaysInMonth,
-  setWeekdayDays,
+  saveAvailabilityMonthDraft,
+  publishAvailabilityMonthChanges,
   ensureMonthExists,
-  copyPreviousMonth,
+  getOccupancyForDate,
+  copyPreviousMonthExact,
+  copyPreviousMonthWeekdayPattern,
 } from '@/lib/admin/availability-actions'
 import type { MonthRecord, DayRecord } from '@/lib/availability-months'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface MonthPlannerProps {
-  /** Currently displayed month — 'YYYY-MM-01' */
   monthStart:    string
   initialMonth:  MonthRecord | null
   initialDays:   DayRecord[]
-  /** Whether the NEXT calendar month is already published */
   nextPublished: boolean
-  /** Per-date booked count from the occupancy query — used for warnings */
   occupancyMap?: Record<string, number>
-  /** Global capacity setting — used to compute warnings */
-  capacity?: number
+  capacity?:     number
 }
 
-// ─── Date/locale helpers ──────────────────────────────────────────────────────
+// Local editable day state — simpler than DayRecord
+interface LocalDay {
+  date:   string
+  isOpen: boolean
+}
+
+// ─── Locale helpers ───────────────────────────────────────────────────────────
 
 const MONTH_NAMES_CS = [
   'Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
@@ -70,10 +83,9 @@ function monthLabel(monthStart: string): string {
 }
 
 function getUTCDayOfWeek(iso: string): number {
-  return new Date(iso + 'T12:00:00Z').getUTCDay() // 0=Sun
+  return new Date(iso + 'T12:00:00Z').getUTCDay()
 }
 
-// Monday-first: 0=Mon … 6=Sun
 function mondayFirst(utcDay: number): number {
   return (utcDay + 6) % 7
 }
@@ -83,8 +95,8 @@ function currentMonthStart(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
 }
 
-function nextMonthStartStr(ms: string): string {
-  return addCalMonths(ms, 1)
+function dayRecordsToLocal(days: DayRecord[]): LocalDay[] {
+  return days.map((d) => ({ date: d.date, isOpen: d.isOpen }))
 }
 
 // ─── Feedback strip ───────────────────────────────────────────────────────────
@@ -113,6 +125,70 @@ function Feedback({ error, success }: { error: string | null; success: string | 
   )
 }
 
+// ─── Confirmation dialog ──────────────────────────────────────────────────────
+
+interface ConfirmCloseDialogProps {
+  date:     string
+  booked:   number
+  capacity: number
+  onConfirm: () => void
+  onCancel:  () => void
+}
+
+function ConfirmCloseDialog({ date, booked, capacity, onConfirm, onCancel }: ConfirmCloseDialogProps) {
+  const d = new Date(date + 'T00:00:00Z')
+  const label = `${d.getUTCDate()}. ${MONTH_NAMES_CS[d.getUTCMonth()].toLowerCase()}`
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Potvrdit uzavření dne ${label}`}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.5)' }}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4"
+        style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-card-border)' }}
+      >
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-500" aria-hidden="true" />
+          <div className="space-y-1">
+            <p className="text-sm font-semibold" style={{ color: 'var(--admin-text)' }}>
+              Na {label} jsou již rezervováni {booked} {booked === 1 ? 'pes' : booked <= 4 ? 'psi' : 'psů'}.
+            </p>
+            <p className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+              Uzavřením data zablokujete pouze nové rezervace. Existující rezervace zůstanou zachovány.
+            </p>
+            <p className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+              Nová volná kapacita: <strong>0</strong> (z celkových {capacity})
+            </p>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border px-4 py-2 text-sm font-medium transition-opacity hover:opacity-70"
+            style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
+          >
+            Zrušit
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-80"
+            style={{ background: '#dc2626' }}
+          >
+            Uzavřít pro nové rezervace
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function MonthPlanner({
@@ -125,506 +201,667 @@ export function MonthPlanner({
 }: MonthPlannerProps) {
   const router = useRouter()
 
-  const [days,  setDays]  = useState<DayRecord[]>(initialDays)
+  // Published state from server
+  const [publishedDays] = useState<LocalDay[]>(dayRecordsToLocal(initialDays))
   const [month, setMonth] = useState<MonthRecord | null>(initialMonth)
+
+  // Local edit state
+  const [localDays, setLocalDays] = useState<LocalDay[]>(dayRecordsToLocal(initialDays))
+  const [isEditing, setIsEditing] = useState(month?.status !== 'published')
 
   const [error,   setError]   = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [isDirty, setIsDirty] = useState(false)
   const [pending, startTransition] = useTransition()
+
+  // Confirmation dialog state
+  const [confirmDate, setConfirmDate] = useState<string | null>(null)
+  const [confirmBooked, setConfirmBooked] = useState(0)
 
   const today        = currentMonthStart()
   const isPastMonth  = monthStart < today
   const isPublished  = month?.status === 'published'
 
-  // Mutations are disabled while month is published (draft-edit workflow)
-  const mutationsDisabled = pending || isPastMonth || isPublished
-
   function clearFeedback() { setError(null); setSuccess(null) }
 
-  // ── Navigation ────────────────────────────────────────────────────────────
+  function markDirty() { setIsDirty(true) }
+
+  // Reset local state when monthStart changes (navigation)
+  useEffect(() => {
+    setLocalDays(dayRecordsToLocal(initialDays))
+    setMonth(initialMonth)
+    setIsEditing(initialMonth?.status !== 'published')
+    setIsDirty(false)
+    setError(null)
+    setSuccess(null)
+    setConfirmDate(null)
+  }, [monthStart]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Navigation ──────────────────────────────────────────────────────────────
 
   function navigate(delta: number) {
+    if (isDirty) {
+      const ok = window.confirm('Máte neuložené změny. Opravdu chcete přejít na jiný měsíc?')
+      if (!ok) return
+    }
     const next = addCalMonths(monthStart, delta)
     router.push(`/admin/kapacita?month=${next.slice(0, 7)}`)
   }
 
-  // ── Ensure month exists (initialise days on first edit) ───────────────────
+  // ── Enter edit mode (published month) ───────────────────────────────────────
 
-  async function ensureAndContinue(): Promise<boolean> {
-    if (days.length > 0) return true
-    const res = await ensureMonthExists(monthStart)
-    if (!res.ok) {
-      setError(res.error ?? 'Nepodařilo se inicializovat měsíc.')
-      return false
-    }
-    setDays(res.data!.days)
-    return true
+  function enterEditMode() {
+    clearFeedback()
+    setLocalDays(dayRecordsToLocal(initialDays))
+    setIsDirty(false)
+    setIsEditing(true)
   }
 
-  // ── Optimistic day toggle ─────────────────────────────────────────────────
+  // ── Cancel edits ────────────────────────────────────────────────────────────
+
+  function cancelEdits() {
+    clearFeedback()
+    setLocalDays([...publishedDays])
+    setIsDirty(false)
+    if (isPublished) setIsEditing(false)
+  }
+
+  // ── Day toggle ───────────────────────────────────────────────────────────────
+  // Always local-only. If closing a date with bookings → show confirmation.
 
   const toggleDay = useCallback((date: string, isOpen: boolean) => {
-    clearFeedback()
-    setDays((prev) => prev.map((d) => d.date === date ? { ...d, isOpen } : d))
-    startTransition(async () => {
-      const res = await setDayOpen(date, isOpen, monthStart)
-      if (!res.ok) {
-        setDays((prev) => prev.map((d) => d.date === date ? { ...d, isOpen: !isOpen } : d))
-        setError(res.error ?? 'Chyba při ukládání dne.')
+    if (!isOpen) {
+      // Closing: check for existing bookings
+      const booked = occupancyMap[date] ?? 0
+      if (booked > 0) {
+        setConfirmDate(date)
+        setConfirmBooked(booked)
+        return
       }
-    })
-  }, [monthStart])
+    }
+    clearFeedback()
+    setLocalDays((prev) => prev.map((d) => d.date === date ? { ...d, isOpen } : d))
+    markDirty()
+  }, [occupancyMap]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Bulk actions ──────────────────────────────────────────────────────────
+  function confirmClose() {
+    if (!confirmDate) return
+    setLocalDays((prev) => prev.map((d) => d.date === confirmDate ? { ...d, isOpen: false } : d))
+    markDirty()
+    setConfirmDate(null)
+  }
+
+  // ── Bulk actions (local only) ────────────────────────────────────────────────
 
   function handleBulkAll(isOpen: boolean) {
     clearFeedback()
-    setDays((prev) => prev.map((d) => ({ ...d, isOpen })))
-    startTransition(async () => {
-      if (!(await ensureAndContinue())) return
-      const res = await setAllDaysInMonth(monthStart, isOpen)
-      if (!res.ok) {
-        router.refresh()
-        setError(res.error ?? 'Hromadná akce se nezdařila.')
-      } else {
-        setSuccess(isOpen ? 'Všechny dny otevřeny.' : 'Všechny dny zavřeny.')
-      }
-    })
+    setLocalDays((prev) => prev.map((d) => ({ ...d, isOpen })))
+    markDirty()
   }
 
-  function handleWeekday(wd: 0 | 1 | 2 | 3 | 4 | 5 | 6, isOpen: boolean) {
+  function handleWeekday(wd: number, isOpen: boolean) {
     clearFeedback()
-    setDays((prev) =>
+    setLocalDays((prev) =>
       prev.map((d) => getUTCDayOfWeek(d.date) === wd ? { ...d, isOpen } : d)
     )
-    startTransition(async () => {
-      if (!(await ensureAndContinue())) return
-      const res = await setWeekdayDays(monthStart, wd, isOpen)
-      if (!res.ok) {
-        router.refresh()
-        setError(res.error ?? 'Akce pro den v týdnu se nezdařila.')
-      } else {
-        setSuccess(`${WEEKDAY_LABELS_FULL_CS[wd]}: hotovo.`)
-      }
-    })
+    markDirty()
   }
 
-  // ── Copy previous month ───────────────────────────────────────────────────
+  // ── Copy previous month — exact day-to-day ──────────────────────────────────
 
-  function handleCopyPrevious() {
+  function handleCopyExact() {
     clearFeedback()
     startTransition(async () => {
-      if (!(await ensureAndContinue())) return
-      const res = await copyPreviousMonth(monthStart)
+      const res = await copyPreviousMonthExact(monthStart)
       if (!res.ok) {
         setError(res.error ?? 'Kopírování se nezdařilo.')
+        return
+      }
+      const mapped = res.data!
+      setLocalDays((prev) =>
+        prev.map((d) => {
+          const src = mapped.find((m) => m.date === d.date)
+          return src ? { ...d, isOpen: src.is_open } : d
+        })
+      )
+      setSuccess('Přesné kopírování dokončeno. Zkontrolujte dny a uložte.')
+      markDirty()
+    })
+  }
+
+  // ── Copy previous month — weekday pattern ───────────────────────────────────
+
+  function handleCopyWeekday() {
+    clearFeedback()
+    startTransition(async () => {
+      const res = await copyPreviousMonthWeekdayPattern(monthStart)
+      if (!res.ok) {
+        setError(res.error ?? 'Kopírování vzoru se nezdařilo.')
+        return
+      }
+      const mapped = res.data!
+      setLocalDays((prev) =>
+        prev.map((d) => {
+          const src = mapped.find((m) => m.date === d.date)
+          return src ? { ...d, isOpen: src.is_open } : d
+        })
+      )
+      setSuccess('Vzor pracovních dnů byl použit. Zkontrolujte dny a uložte.')
+      markDirty()
+    })
+  }
+
+  // ── Ensure month exists (for new months) ────────────────────────────────────
+
+  async function ensureAndInit(): Promise<LocalDay[] | null> {
+    if (localDays.length > 0) return localDays
+    const res = await ensureMonthExists(monthStart)
+    if (!res.ok) {
+      setError(res.error ?? 'Nepodařilo se inicializovat měsíc.')
+      return null
+    }
+    const days = dayRecordsToLocal(res.data!.days)
+    setLocalDays(days)
+    return days
+  }
+
+  // ── Save as draft (no public revalidation) ──────────────────────────────────
+
+  function handleSaveDraft() {
+    clearFeedback()
+    startTransition(async () => {
+      const days = await ensureAndInit()
+      if (!days) return
+      const payload = days.map((d) => ({ date: d.date, is_open: d.isOpen }))
+      const res = await saveAvailabilityMonthDraft(monthStart, payload)
+      if (!res.ok) {
+        setError(res.error ?? 'Uložení se nezdařilo.')
       } else {
-        setSuccess('Vzor z předchozího měsíce byl použit. Zkontrolujte dny a zveřejněte.')
-        router.refresh()   // refresh to get server-authoritative day state
+        setIsDirty(false)
+        setSuccess('Koncept uložen. Zákazníci zatím nemohou měsíc rezervovat.')
       }
     })
   }
 
-  // ── Publish / Unpublish ───────────────────────────────────────────────────
+  // ── Save and publish atomically ──────────────────────────────────────────────
 
-  function handlePublish() {
+  function handlePublishChanges() {
     clearFeedback()
     startTransition(async () => {
-      if (!(await ensureAndContinue())) return
-      const res = await publishMonth(monthStart)
+      const days = await ensureAndInit()
+      if (!days) return
+      const payload = days.map((d) => ({ date: d.date, is_open: d.isOpen }))
+      const res = await publishAvailabilityMonthChanges(monthStart, payload)
       if (!res.ok) {
-        setError(res.error ?? 'Nepodařilo se zveřejnit měsíc.')
+        setError(res.error ?? 'Zveřejnění se nezdařilo.')
       } else {
+        setIsDirty(false)
+        setIsEditing(false)
         setMonth((prev) => prev
           ? { ...prev, status: 'published', publishedAt: new Date().toISOString() }
           : { monthStart, status: 'published', publishedAt: new Date().toISOString() }
         )
-        setSuccess('Měsíc byl zveřejněn. Zákazníci nyní vidí dostupnost.')
+        setSuccess('Změny byly atomicky uloženy a zveřejněny. Zákazníci vidí aktuální dostupnost.')
       }
     })
   }
 
-  function handleUnpublish() {
-    clearFeedback()
-    startTransition(async () => {
-      const res = await unpublishMonth(monthStart)
-      if (!res.ok) {
-        setError(res.error ?? 'Nepodařilo se stáhnout měsíc.')
-      } else {
-        setMonth((prev) => prev
-          ? { ...prev, status: 'draft' }
-          : { monthStart, status: 'draft', publishedAt: null }
-        )
-        setSuccess('Měsíc byl stažen do konceptu. Proveďte změny a znovu zveřejněte.')
-      }
-    })
-  }
+  // ── Calendar grid ────────────────────────────────────────────────────────────
 
-  // ── Calendar grid build ───────────────────────────────────────────────────
-
-  const d0    = new Date(monthStart + 'T00:00:00Z')
-  const year  = d0.getUTCFullYear()
+  const d0     = new Date(monthStart + 'T00:00:00Z')
+  const year   = d0.getUTCFullYear()
   const month0 = d0.getUTCMonth()
-  const numDays = new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate()
-  const firstWd = mondayFirst(getUTCDayOfWeek(monthStart))
+  const numDays  = new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate()
+  const firstWd  = mondayFirst(getUTCDayOfWeek(monthStart))
 
-  const dayMap = new Map<string, DayRecord>(days.map((d) => [d.date, d]))
+  const dayMap = new Map<string, LocalDay>(localDays.map((d) => [d.date, d]))
 
-  const nextMonth = nextMonthStartStr(monthStart)
+  const nextMonth = addCalMonths(monthStart, 1)
 
-  // Weekday stats — count open days per weekday
   const weekdayOpen  = new Array(7).fill(0) as number[]
   const weekdayTotal = new Array(7).fill(0) as number[]
-  for (const day of days) {
+  for (const day of localDays) {
     const wd = getUTCDayOfWeek(day.date)
     weekdayTotal[wd]++
     if (day.isOpen) weekdayOpen[wd]++
   }
 
-  // Occupancy warning: days that are open but already have bookings
-  const bookedOpenDays = days.filter((d) => {
+  const bookedOpenDays = localDays.filter((d) => {
     const booked = occupancyMap[d.date] ?? 0
     return d.isOpen && booked > 0
   })
-  const overCapacityDays = days.filter((d) => {
+  const overCapacityDays = localDays.filter((d) => {
     const booked = occupancyMap[d.date] ?? 0
     return d.isOpen && booked >= capacity
   })
 
-  return (
-    <div className="space-y-4">
+  const mutationsDisabled = pending || isPastMonth || !isEditing
 
-      {/* ── Reminder: next month not published ─────────────────────────────── */}
-      {!nextPublished && !isPastMonth && (
+  return (
+    <>
+      {/* ── Confirmation dialog ─────────────────────────────────────────────── */}
+      {confirmDate && (
+        <ConfirmCloseDialog
+          date={confirmDate}
+          booked={confirmBooked}
+          capacity={capacity}
+          onConfirm={confirmClose}
+          onCancel={() => setConfirmDate(null)}
+        />
+      )}
+
+      <div className="space-y-4">
+
+        {/* ── Reminder: next month not published ──────────────────────────── */}
+        {!nextPublished && !isPastMonth && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-xl px-4 py-3"
+            style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <div className="text-sm">
+              <span className="font-semibold">Připomínka:</span>{' '}
+              Měsíc <span className="font-semibold">{monthLabel(nextMonth)}</span> ještě nebyl zveřejněn.{' '}
+              <button
+                type="button"
+                onClick={() => router.push(`/admin/kapacita?month=${nextMonth.slice(0, 7)}`)}
+                className="underline underline-offset-2 hover:opacity-70"
+              >
+                Přejít na {monthLabel(nextMonth)}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Editing published month: changes-pending banner ─────────────── */}
+        {isPublished && isEditing && !isPastMonth && (
+          <div
+            className="flex items-start gap-2.5 rounded-xl px-4 py-3"
+            style={{ background: '#fefce8', border: '1px solid #fde047', color: '#713f12' }}
+          >
+            <Pencil className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <p className="text-sm font-semibold">
+              Změny zatím nejsou veřejné.{' '}
+              <span className="font-normal">Uložte a zveřejněte je, nebo zrušte úpravy.</span>
+            </p>
+          </div>
+        )}
+
+        {/* ── Published, NOT editing: lock notice ─────────────────────────── */}
+        {isPublished && !isEditing && !isPastMonth && (
+          <div
+            className="flex items-start gap-2.5 rounded-xl px-4 py-3"
+            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8' }}
+          >
+            <Globe className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <p className="text-sm">
+              <span className="font-semibold">Měsíc je zveřejněn.</span>{' '}
+              Zákazníci vidí aktuální dostupnost. Kliknutím na{' '}
+              <span className="font-semibold">Upravit</span> zahájíte úpravy — změny jsou veřejné
+              teprve po kliknutí na <span className="font-semibold">Uložit a zveřejnit</span>.
+            </p>
+          </div>
+        )}
+
+        {/* ── Occupancy warnings ──────────────────────────────────────────── */}
+        {bookedOpenDays.length > 0 && (
+          <div
+            className="rounded-xl px-4 py-3 space-y-1"
+            style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}
+            role="alert"
+          >
+            <p className="flex items-center gap-1.5 text-xs font-semibold">
+              <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+              Upozornění na obsazenost
+            </p>
+            {overCapacityDays.length > 0 && (
+              <p className="text-xs">
+                <span className="font-semibold">Plně obsazeno:</span>{' '}
+                {overCapacityDays.map((d) => {
+                  const dt = new Date(d.date + 'T00:00:00Z')
+                  return `${dt.getUTCDate()}.${dt.getUTCMonth() + 1}.`
+                }).join(', ')}{' '}
+                — nelze přidat nové rezervace.
+              </p>
+            )}
+            {bookedOpenDays.filter((d) => (occupancyMap[d.date] ?? 0) < capacity).length > 0 && (
+              <p className="text-xs">
+                <span className="font-semibold">Částečně obsazeno:</span>{' '}
+                {bookedOpenDays
+                  .filter((d) => (occupancyMap[d.date] ?? 0) < capacity)
+                  .map((d) => {
+                    const dt     = new Date(d.date + 'T00:00:00Z')
+                    const booked = occupancyMap[d.date] ?? 0
+                    return `${dt.getUTCDate()}.${dt.getUTCMonth() + 1}. (${booked}/${capacity})`
+                  })
+                  .join(', ')}
+              </p>
+            )}
+            <p className="text-xs italic" style={{ color: '#b45309' }}>
+              Uzavření dne s existujícími rezervacemi neruší tyto rezervace — zákazníci zůstávají.
+            </p>
+          </div>
+        )}
+
+        {/* ── Month header ────────────────────────────────────────────────── */}
         <div
-          role="alert"
-          className="flex items-start gap-2.5 rounded-xl px-4 py-3"
-          style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
+          style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-card-border)' }}
         >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <div className="text-sm">
-            <span className="font-semibold">Připomínka:</span>{' '}
-            Měsíc <span className="font-semibold">{monthLabel(nextMonth)}</span> ještě nebyl
-            zveřejněn. Zákazníci ho zatím nemohou rezervovat.{' '}
+          {/* Navigation */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => router.push(`/admin/kapacita?month=${nextMonth.slice(0, 7)}`)}
-              className="underline underline-offset-2 hover:opacity-70"
+              onClick={() => navigate(-1)}
+              disabled={pending}
+              aria-label="Předchozí měsíc"
+              className="flex size-8 items-center justify-center rounded-lg border transition-colors hover:opacity-70 disabled:opacity-40"
+              style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
             >
-              Přejít na {monthLabel(nextMonth)}
+              <ChevronLeft className="size-4" />
+            </button>
+
+            <span className="min-w-[160px] text-center text-base font-semibold" style={{ color: 'var(--admin-text)' }}>
+              {monthLabel(monthStart)}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => navigate(1)}
+              disabled={pending}
+              aria-label="Následující měsíc"
+              className="flex size-8 items-center justify-center rounded-lg border transition-colors hover:opacity-70 disabled:opacity-40"
+              style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
+            >
+              <ChevronRight className="size-4" />
             </button>
           </div>
-        </div>
-      )}
 
-      {/* ── Published lock banner ───────────────────────────────────────────── */}
-      {isPublished && !isPastMonth && (
-        <div
-          className="flex items-start gap-2.5 rounded-xl px-4 py-3"
-          style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8' }}
-        >
-          <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <p className="text-sm">
-            <span className="font-semibold">Měsíc je zveřejněn a uzamčen pro úpravy.</span>{' '}
-            Chcete-li změnit otevřené dny, nejdříve ho stáhněte zpět do konceptu tlačítkem{' '}
-            <span className="font-semibold">Stáhnout</span>, proveďte změny a znovu zveřejněte.
-          </p>
-        </div>
-      )}
+          {/* Status + action buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Status pill */}
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
+              style={isPublished
+                ? { background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }
+                : { background: 'var(--admin-bg)', color: 'var(--admin-text-muted)', border: '1px solid var(--admin-card-border)' }
+              }
+            >
+              {isPublished
+                ? <><Globe className="size-3" aria-hidden="true" /> Zveřejněno</>
+                : <><EyeOff className="size-3" aria-hidden="true" /> Koncept</>
+              }
+            </span>
 
-      {/* ── Occupancy warnings ─────────────────────────────────────────────── */}
-      {bookedOpenDays.length > 0 && (
-        <div
-          className="rounded-xl px-4 py-3 space-y-1"
-          style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}
-          role="alert"
-        >
-          <p className="flex items-center gap-1.5 text-xs font-semibold">
-            <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
-            Upozornění na obsazenost
-          </p>
-          {overCapacityDays.length > 0 && (
-            <p className="text-xs">
-              <span className="font-semibold">Plně obsazeno:</span>{' '}
-              {overCapacityDays.map((d) => {
-                const date = new Date(d.date + 'T00:00:00Z')
-                return `${date.getUTCDate()}.${date.getUTCMonth() + 1}.`
-              }).join(', ')}
-              {' '}— nelze přidat nové rezervace.
-            </p>
-          )}
-          {bookedOpenDays.filter((d) => (occupancyMap[d.date] ?? 0) < capacity).length > 0 && (
-            <p className="text-xs" style={{ color: '#b45309' }}>
-              <span className="font-semibold">Částečně obsazeno:</span>{' '}
-              {bookedOpenDays
-                .filter((d) => (occupancyMap[d.date] ?? 0) < capacity)
-                .map((d) => {
-                  const date   = new Date(d.date + 'T00:00:00Z')
-                  const booked = occupancyMap[d.date] ?? 0
-                  return `${date.getUTCDate()}.${date.getUTCMonth() + 1}. (${booked}/${capacity})`
-                })
-                .join(', ')}
-            </p>
-          )}
-          <p className="text-xs italic" style={{ color: '#b45309' }}>
-            Uzavření dne s existujícími rezervacemi neruší tyto rezervace — zákazníci zůstávají.
-          </p>
-        </div>
-      )}
+            {!isPastMonth && (
+              <>
+                {/* Published, not editing → "Upravit zveřejněný měsíc" */}
+                {isPublished && !isEditing && (
+                  <button
+                    type="button"
+                    onClick={enterEditMode}
+                    disabled={pending}
+                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
+                    style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
+                  >
+                    <Pencil className="size-3" aria-hidden="true" />
+                    Upravit zveřejněný měsíc
+                  </button>
+                )}
 
-      {/* ── Month header ───────────────────────────────────────────────────── */}
-      <div
-        className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
-        style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-card-border)' }}
-      >
-        {/* Navigation */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            disabled={pending}
-            aria-label="Předchozí měsíc"
-            className="flex size-8 items-center justify-center rounded-lg border transition-colors hover:opacity-70 disabled:opacity-40"
-            style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
+                {/* Editing published → "Zrušit úpravy" + "Uložit a zveřejnit změny" */}
+                {isPublished && isEditing && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={cancelEdits}
+                      disabled={pending}
+                      className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
+                      style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
+                    >
+                      <X className="size-3" aria-hidden="true" />
+                      Zrušit úpravy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePublishChanges}
+                      disabled={pending || !isDirty}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+                      style={{ background: 'var(--admin-accent)' }}
+                    >
+                      {pending
+                        ? <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                        : <Globe className="size-3" aria-hidden="true" />
+                      }
+                      Uložit a zveřejnit změny
+                    </button>
+                  </>
+                )}
+
+                {/* Draft → "Uložit koncept" + "Zveřejnit měsíc" */}
+                {!isPublished && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSaveDraft}
+                      disabled={pending || !isDirty}
+                      className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
+                      style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
+                    >
+                      {pending
+                        ? <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                        : <CheckCircle2 className="size-3" aria-hidden="true" />
+                      }
+                      Uložit koncept
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePublishChanges}
+                      disabled={pending}
+                      className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+                      style={{ background: 'var(--admin-accent)' }}
+                    >
+                      {pending
+                        ? <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                        : <Globe className="size-3" aria-hidden="true" />
+                      }
+                      Zveřejnit měsíc
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ── Feedback ────────────────────────────────────────────────────── */}
+        <Feedback error={error} success={success} />
+
+        {/* ── Bulk / copy actions ──────────────────────────────────────────── */}
+        {!isPastMonth && isEditing && (
+          <div
+            className="flex flex-wrap items-center gap-3 rounded-xl px-4 py-3"
+            style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-card-border)' }}
           >
-            <ChevronLeft className="size-4" />
-          </button>
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--admin-text-muted)' }}>
+              Hromadně:
+            </span>
 
-          <span className="min-w-[160px] text-center text-base font-semibold" style={{ color: 'var(--admin-text)' }}>
-            {monthLabel(monthStart)}
-          </span>
+            <button
+              type="button"
+              onClick={() => handleBulkAll(true)}
+              disabled={pending}
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
+              style={{ borderColor: '#bbf7d0', color: '#16a34a', background: '#f0fdf4' }}
+            >
+              <CheckSquare className="size-3.5" aria-hidden="true" />
+              Otevřít vše
+            </button>
 
-          <button
-            type="button"
-            onClick={() => navigate(1)}
-            disabled={pending}
-            aria-label="Následující měsíc"
-            className="flex size-8 items-center justify-center rounded-lg border transition-colors hover:opacity-70 disabled:opacity-40"
-            style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
-          >
-            <ChevronRight className="size-4" />
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => handleBulkAll(false)}
+              disabled={pending}
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
+              style={{ borderColor: '#fecaca', color: '#dc2626', background: '#fef2f2' }}
+            >
+              <XSquare className="size-3.5" aria-hidden="true" />
+              Zavřít vše
+            </button>
 
-        {/* Status badge + actions */}
-        <div className="flex items-center gap-3">
-          {/* Status pill */}
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
-            style={isPublished
-              ? { background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }
-              : { background: 'var(--admin-bg)', color: 'var(--admin-text-muted)', border: '1px solid var(--admin-card-border)' }
-            }
-          >
-            {isPublished
-              ? <><Globe className="size-3" aria-hidden="true" /> Zveřejněno</>
-              : <><EyeOff className="size-3" aria-hidden="true" /> Koncept</>
-            }
-          </span>
+            {/* Exact day-to-day copy */}
+            <button
+              type="button"
+              onClick={handleCopyExact}
+              disabled={pending}
+              title="Zkopíruje dny 1:1 z předchozího měsíce (1. → 1., 2. → 2., …)"
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
+              style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)', background: 'var(--admin-bg)' }}
+            >
+              {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+              Kopírovat předchozí měsíc
+            </button>
 
-          {/* Publish / Unpublish */}
-          {!isPastMonth && (
-            isPublished ? (
-              <button
-                type="button"
-                onClick={handleUnpublish}
-                disabled={pending}
-                className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
-                style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
-              >
-                {pending ? <Loader2 className="size-3 animate-spin" /> : <EyeOff className="size-3" />}
-                Stáhnout
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handlePublish}
-                disabled={pending}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40"
-                style={{ background: 'var(--admin-accent)' }}
-              >
-                {pending ? <Loader2 className="size-3 animate-spin" /> : <Globe className="size-3" />}
-                Zveřejnit
-              </button>
-            )
-          )}
-        </div>
-      </div>
+            {/* Weekday pattern copy (separate, explicit) */}
+            <button
+              type="button"
+              onClick={handleCopyWeekday}
+              disabled={pending}
+              title="Zkopíruje vzor pracovních dnů z předchozího měsíce (Po=otevřeno → každé Po otevřeno, …)"
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
+              style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)', background: 'var(--admin-bg)' }}
+            >
+              {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <CalendarCheck className="size-3.5" aria-hidden="true" />}
+              Kopírovat režim pracovních dnů
+            </button>
 
-      {/* ── Feedback ───────────────────────────────────────────────────────── */}
-      <Feedback error={error} success={success} />
+            <span className="hidden text-xs sm:block" style={{ color: 'var(--admin-card-border)' }}>|</span>
 
-      {/* ── Bulk actions (disabled while published) ────────────────────────── */}
-      {!isPastMonth && (
+            {/* Per-weekday toggles */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>Každý:</span>
+              {([1, 2, 3, 4, 5, 6, 0] as const).map((wd) => {
+                const label = WEEKDAY_LABELS_CS[wd]
+                const open  = weekdayOpen[wd]
+                const total = weekdayTotal[wd]
+                return (
+                  <WeekdayButton
+                    key={wd}
+                    label={label}
+                    open={open}
+                    total={total}
+                    allOpen={open === total}
+                    allClosed={open === 0}
+                    disabled={pending}
+                    onOpen={() => handleWeekday(wd, true)}
+                    onClose={() => handleWeekday(wd, false)}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Calendar grid ────────────────────────────────────────────────── */}
         <div
-          className={cn(
-            'flex flex-wrap items-center gap-3 rounded-xl px-4 py-3',
-            isPublished && 'opacity-50 pointer-events-none select-none',
-          )}
+          className="rounded-xl p-4"
           style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-card-border)' }}
-          aria-hidden={isPublished}
         >
-          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--admin-text-muted)' }}>
-            Hromadně:
-          </span>
+          {/* Weekday headers (Mon-first) */}
+          <div className="mb-2 grid grid-cols-7">
+            {['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'].map((d) => (
+              <div
+                key={d}
+                className="py-1 text-center text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: 'var(--admin-text-muted)' }}
+              >
+                {d}
+              </div>
+            ))}
+          </div>
 
-          <button
-            type="button"
-            onClick={() => handleBulkAll(true)}
-            disabled={mutationsDisabled}
-            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
-            style={{ borderColor: '#bbf7d0', color: '#16a34a', background: '#f0fdf4' }}
-          >
-            <CheckSquare className="size-3.5" aria-hidden="true" />
-            Otevřít vše
-          </button>
+          {/* Day cells */}
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: firstWd }).map((_, i) => (
+              <div key={`blank-${i}`} />
+            ))}
 
-          <button
-            type="button"
-            onClick={() => handleBulkAll(false)}
-            disabled={mutationsDisabled}
-            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
-            style={{ borderColor: '#fecaca', color: '#dc2626', background: '#fef2f2' }}
-          >
-            <XSquare className="size-3.5" aria-hidden="true" />
-            Zavřít vše
-          </button>
+            {Array.from({ length: numDays }, (_, i) => {
+              const dayNum = i + 1
+              const iso    = `${year}-${String(month0 + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
+              const rec    = dayMap.get(iso)
+              const isOpen = rec?.isOpen ?? false
+              const wd     = getUTCDayOfWeek(iso)
+              const booked = occupancyMap[iso] ?? 0
+              const isToday = iso === new Date().toISOString().split('T')[0]
 
-          {/* Copy previous month */}
-          <button
-            type="button"
-            onClick={handleCopyPrevious}
-            disabled={mutationsDisabled}
-            title="Použije otevřené/zavřené dny předchozího měsíce jako vzor (podle dne v týdnu)"
-            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
-            style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)', background: 'var(--admin-bg)' }}
-          >
-            {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
-            Zkopírovat z předchozího měsíce
-          </button>
-
-          <span className="hidden text-xs sm:block" style={{ color: 'var(--admin-card-border)' }}>|</span>
-
-          {/* Weekday buttons */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>Každý:</span>
-            {([1,2,3,4,5,6,0] as const).map((wd) => {
-              const label = WEEKDAY_LABELS_CS[wd]
-              const open  = weekdayOpen[wd]
-              const total = weekdayTotal[wd]
               return (
-                <WeekdayButton
-                  key={wd}
-                  label={label}
-                  open={open}
-                  total={total}
-                  allOpen={open === total}
-                  allClosed={open === 0}
-                  disabled={mutationsDisabled}
-                  onOpen={() => handleWeekday(wd, true)}
-                  onClose={() => handleWeekday(wd, false)}
+                <DayCell
+                  key={iso}
+                  day={dayNum}
+                  iso={iso}
+                  isOpen={isOpen}
+                  isPastMonth={isPastMonth}
+                  isEditing={isEditing}
+                  isWeekend={wd === 0 || wd === 6}
+                  isToday={isToday}
+                  booked={booked}
+                  capacity={capacity}
+                  disabled={pending || isPastMonth || !isEditing}
+                  onToggle={() => toggleDay(iso, !isOpen)}
                 />
               )
             })}
           </div>
-        </div>
-      )}
 
-      {/* ── Calendar grid ──────────────────────────────────────────────────── */}
-      <div
-        className="rounded-xl p-4"
-        style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-card-border)' }}
-      >
-        {/* Weekday headers (Mon-first) */}
-        <div className="mb-2 grid grid-cols-7">
-          {['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'].map((d) => (
-            <div
-              key={d}
-              className="py-1 text-center text-[10px] font-semibold uppercase tracking-wider"
-              style={{ color: 'var(--admin-text-muted)' }}
-            >
-              {d}
-            </div>
-          ))}
-        </div>
-
-        {/* Day cells */}
-        <div className="grid grid-cols-7 gap-1">
-          {/* Leading blanks */}
-          {Array.from({ length: firstWd }).map((_, i) => (
-            <div key={`blank-${i}`} />
-          ))}
-
-          {Array.from({ length: numDays }, (_, i) => {
-            const dayNum = i + 1
-            const iso    = `${year}-${String(month0 + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`
-            const rec    = dayMap.get(iso)
-            const isOpen = rec?.isOpen ?? false
-            const wd     = getUTCDayOfWeek(iso)
-            const booked = occupancyMap[iso] ?? 0
-
-            return (
-              <DayCell
-                key={iso}
-                day={dayNum}
-                iso={iso}
-                isOpen={isOpen}
-                isPastMonth={isPastMonth}
-                isPublished={isPublished}
-                isWeekend={wd === 0 || wd === 6}
-                isToday={iso === new Date().toISOString().split('T')[0]}
-                booked={booked}
-                capacity={capacity}
-                disabled={pending || isPastMonth || isPublished}
-                onToggle={() => toggleDay(iso, !isOpen)}
-              />
-            )
-          })}
-        </div>
-
-        {/* Legend */}
-        <div className="mt-3 flex flex-wrap items-center gap-4 border-t pt-3" style={{ borderColor: 'var(--admin-card-border)' }}>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block size-3.5 rounded-sm" style={{ background: '#dcfce7', border: '1px solid #86efac' }} aria-hidden="true" />
-            <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>Otevřeno</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block size-3.5 rounded-sm" style={{ background: '#fee2e2', border: '1px solid #fca5a5' }} aria-hidden="true" />
-            <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>Uzavřeno</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block size-3.5 rounded-sm" style={{ background: '#fef9c3', border: '1px solid #fde047' }} aria-hidden="true" />
-            <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>Obsazeno (existují rezervace)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block size-3.5 rounded-sm" style={{ background: '#fee2e2', border: '2px solid #dc2626' }} aria-hidden="true" />
-            <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>Plně obsazeno</span>
+          {/* Legend */}
+          <div className="mt-3 flex flex-wrap items-center gap-4 border-t pt-3" style={{ borderColor: 'var(--admin-card-border)' }}>
+            <LegendItem color="#dcfce7" border="#86efac" label="Otevřeno" />
+            <LegendItem color="#fee2e2" border="#fca5a5" label="Uzavřeno" />
+            <LegendItem color="#fef9c3" border="#fde047" label="Obsazeno (existují rezervace)" />
+            <LegendItem color="#fee2e2" border="#dc2626" thick label="Plně obsazeno" />
           </div>
         </div>
+
+        {/* ── No days note ─────────────────────────────────────────────────── */}
+        {localDays.length === 0 && !isPastMonth && (
+          <div
+            className="flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm"
+            style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
+          >
+            <CalendarCheck className="size-4 shrink-0" aria-hidden="true" />
+            Tento měsíc ještě nebyl inicializován. Kliknutím na „Zveřejnit měsíc" se dny vytvoří automaticky.
+          </div>
+        )}
       </div>
+    </>
+  )
+}
 
-      {/* ── No days note (month not initialised) ────────────────────────────── */}
-      {days.length === 0 && !isPastMonth && (
-        <div
-          className="flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm"
-          style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
-        >
-          <CalendarCheck className="size-4 shrink-0" aria-hidden="true" />
-          Tento měsíc ještě nebyl inicializován. Klikněte na „Zveřejnit" a dny se vytvoří automaticky.
-        </div>
-      )}
+// ─── Legend item ──────────────────────────────────────────────────────────────
+
+function LegendItem({ color, border, label, thick = false }: { color: string; border: string; label: string; thick?: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        className="inline-block size-3.5 rounded-sm"
+        style={{ background: color, border: `${thick ? 2 : 1}px solid ${border}` }}
+        aria-hidden="true"
+      />
+      <span className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>{label}</span>
     </div>
   )
 }
 
-// ─── DayCell ─────────────────────────────────────────────────────────────────
+// ─── DayCell ──────────────────────────────────────────────────────────────────
 
 interface DayCellProps {
   day:         number
   iso:         string
   isOpen:      boolean
   isPastMonth: boolean
-  isPublished: boolean
+  isEditing:   boolean
   isWeekend:   boolean
   isToday:     boolean
   booked:      number
@@ -634,14 +871,14 @@ interface DayCellProps {
 }
 
 function DayCell({
-  day, iso, isOpen, isPastMonth, isPublished, isWeekend, isToday,
+  day, iso, isOpen, isPastMonth, isEditing, isWeekend, isToday,
   booked, capacity, disabled, onToggle,
 }: DayCellProps) {
   const isBookedOpen   = isOpen && booked > 0
   const isFullCapacity = isOpen && booked >= capacity
 
-  const label = isPublished
-    ? `${iso}, měsíc je zveřejněn – nejdříve stáhněte do konceptu`
+  const label = !isEditing
+    ? `${iso} — kliknutím na Upravit zahájíte úpravy`
     : isOpen
       ? `${iso}, otevřeno – kliknutím zavřít`
       : `${iso}, zavřeno – kliknutím otevřít`
@@ -656,41 +893,41 @@ function DayCell({
       className={cn(
         'relative flex aspect-square w-full flex-col items-center justify-center rounded-lg border text-[11px] font-semibold transition-colors duration-100',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
-        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:opacity-80',
+        disabled ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-80',
         isToday && 'ring-2 ring-offset-1',
       )}
       style={
         isPastMonth
           ? {
-              background: 'transparent',
-              borderColor: 'var(--admin-card-border)',
-              color: 'var(--admin-text-muted)',
-              opacity: 0.4,
+              background:   'transparent',
+              borderColor:  'var(--admin-card-border)',
+              color:        'var(--admin-text-muted)',
+              opacity:      0.4,
             }
           : isFullCapacity
             ? {
-                background: '#fee2e2',
-                borderColor: '#dc2626',
-                borderWidth: '2px',
-                color: '#991b1b',
+                background:   '#fee2e2',
+                borderColor:  '#dc2626',
+                borderWidth:  '2px',
+                color:        '#991b1b',
               }
             : isBookedOpen
               ? {
-                  background: '#fef9c3',
+                  background:  '#fef9c3',
                   borderColor: '#fde047',
-                  color: '#713f12',
+                  color:       '#713f12',
                 }
               : isOpen
                 ? {
-                    background: '#dcfce7',
+                    background:  '#dcfce7',
                     borderColor: '#86efac',
-                    color: '#166534',
+                    color:       '#166534',
                     ...(isToday ? { outlineColor: '#16a34a' } : {}),
                   }
                 : {
-                    background: '#fee2e2',
+                    background:  '#fee2e2',
                     borderColor: '#fca5a5',
-                    color: '#991b1b',
+                    color:       '#991b1b',
                   }
       }
     >
@@ -698,6 +935,11 @@ function DayCell({
       {isBookedOpen && (
         <span className="text-[8px] font-normal leading-none" aria-hidden="true">
           {booked}/{capacity}
+        </span>
+      )}
+      {isFullCapacity && !isOpen && (
+        <span className="text-[8px] font-normal leading-none" aria-hidden="true">
+          {booked} psů
         </span>
       )}
     </button>
