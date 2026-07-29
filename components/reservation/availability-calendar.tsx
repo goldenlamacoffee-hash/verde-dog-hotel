@@ -165,8 +165,8 @@ function getDayAriaLabel(
   if (isValidDep)  return `${base}, plně obsazeno – lze zvolit jako odjezd`
   if (!occ) return base
   // Day-state descriptions
-  if (occ.state === 'unreleased') return `${base}, termín zatím nezveřejněn`
-  if (occ.state === 'closed')     return `${base}, hotel uzavřen`
+  if (occ.state === 'unreleased') return `${base}, datum zatím není k rezervaci uvolněno`
+  if (occ.state === 'closed')     return `${base}, datum dočasně nedostupné`
   if (occ.free <= 0) return `${base}, plně obsazeno`
   if (occ.free === 1) return `${base}, poslední volné místo`
   if (occ.free <= occ.maxDogs / 2) return `${base}, zbývají ${occ.free} místa`
@@ -501,13 +501,13 @@ function CalendarLegend({ appearance }: { appearance: CalendarAppearance }) {
       indicator: '×',
     },
     {
-      label: 'Uzavřeno',
+      label: 'Dočasně nedostupné',
       bg: appearance.closedBackground,
       text: appearance.closedText,
-      indicator: '×',
+      indicator: null,
     },
     {
-      label: 'Nezveřejněno',
+      label: 'Neuvolněno k rezervaci',
       bg: appearance.unreleasedBackground,
       text: appearance.unreleasedText,
       indicator: null,

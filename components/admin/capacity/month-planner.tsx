@@ -818,7 +818,7 @@ export function MonthPlanner({
           {/* Legend */}
           <div className="mt-3 flex flex-wrap items-center gap-4 border-t pt-3" style={{ borderColor: 'var(--admin-card-border)' }}>
             <LegendItem color="#dcfce7" border="#86efac" label="Otevřeno" />
-            <LegendItem color="#fee2e2" border="#fca5a5" label="Uzavřeno" />
+            <LegendItem color="#F1F3F5" border="#D0D5DD" label="Uzavřeno / Nezveřejněno" />
             <LegendItem color="#fef9c3" border="#fde047" label="Obsazeno (existují rezervace)" />
             <LegendItem color="#fee2e2" border="#dc2626" thick label="Plně obsazeno" />
           </div>
@@ -925,9 +925,12 @@ function DayCell({
                     ...(isToday ? { outlineColor: '#16a34a' } : {}),
                   }
                 : {
-                    background:  '#fee2e2',
-                    borderColor: '#fca5a5',
-                    color:       '#991b1b',
+                    // Closed = neutral gray — NOT red. Red is reserved for
+                    // "fully booked / no capacity left" (see isFullCapacity above).
+                    // Closed means: owner chose not to open this date.
+                    background:  '#F1F3F5',
+                    borderColor: '#D0D5DD',
+                    color:       '#667085',
                   }
       }
     >
