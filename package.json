@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "vitest run --reporter=verbose"
+    "test": "vitest run --reporter=verbose",
+    "test:live": "RUN_LIVE_SUPABASE_TESTS=true vitest run --reporter=verbose"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
