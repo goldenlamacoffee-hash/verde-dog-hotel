@@ -8,9 +8,13 @@
  *
  * What it does:
  *  1. Create availability_months + availability_days tables via Supabase SQL endpoint
- *  2. Backfill July 2026, August 2026, current month, next month as published + all days open
- *  3. Backfill months that have future active reservations
- *  4. Write scripts/rpc-migration.sql for the get_nightly_occupancy RPC update
+ *  2. Write scripts/rpc-migration.sql for the get_nightly_occupancy RPC update
+ *
+ * NOTE: This script intentionally does NOT backfill or publish any months.
+ * Months must be created deliberately by an admin via the Kapacita planner.
+ * Auto-publishing months (the old behavior) was removed because it bypassed
+ * the deliberate owner workflow and caused months to be visible to customers
+ * before the owner had reviewed or approved them.
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -30,13 +34,7 @@ const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
 })
 
 function pad(n) { return String(n).padStart(2, '0') }
-function monthStart(year, month) { return `${year}-${pad(month)}-01` }
-function daysInMonth(year, month) {
-  const last = new Date(year, month, 0).getDate()
-  const days = []
-  for (let d = 1; d <= last; d++) days.push(`${year}-${pad(month)}-${pad(d)}`)
-  return days
-}
+function monthStart(year, month) { return `${year}-${pad(month)}-01` } // eslint-disable-line @typescript-eslint/no-unused-vars
 
 /** Execute raw SQL via Supabase's pg REST endpoint (service_role required). */
 async function executeSql(sql) {
@@ -158,106 +156,14 @@ async function run() {
   }
   console.log('  Tables confirmed present. OK.\n')
 
-  // ── STEP 2 + 3: Backfill months ───────────────────────────────────────────
-  console.log('Step 2: Backfilling months...')
-  const now = new Date()
-
-  const toBackfill = new Map() // key → { year, month }
-
-  // Always backfill Jul 2026, Aug 2026, current, next
-  for (const { year, month } of [
-    { year: 2026, month: 7 },
-    { year: 2026, month: 8 },
-    { year: now.getFullYear(), month: now.getMonth() + 1 },
-    { year: new Date(now.getFullYear(), now.getMonth() + 1, 1).getFullYear(),
-      month: new Date(now.getFullYear(), now.getMonth() + 1, 1).getMonth() + 1 },
-  ]) {
-    toBackfill.set(`${year}-${month}`, { year, month })
-  }
-
-  // Months with future active reservations
-  const todayStr = now.toISOString().split('T')[0]
-  const { data: futureRes, error: futureErr } = await admin
-    .from('reservations')
-    .select('arrival_date, departure_date')
-    .gte('departure_date', todayStr)
-    .not('status', 'in', '("cancelled","rejected","checked_out")')
-
-  if (futureErr) {
-    console.warn('  Could not load future reservations:', futureErr.message)
-  } else {
-    for (const r of futureRes ?? []) {
-      let d = new Date(r.arrival_date)
-      const end = new Date(r.departure_date)
-      while (d < end) {
-        toBackfill.set(`${d.getFullYear()}-${d.getMonth() + 1}`, {
-          year: d.getFullYear(), month: d.getMonth() + 1
-        })
-        d.setDate(d.getDate() + 1)
-      }
-    }
-  }
-
-  console.log(`  Will backfill ${toBackfill.size} month(s): ${[...toBackfill.keys()].sort().join(', ')}`)
-
-  for (const { year, month } of toBackfill.values()) {
-    const ms = monthStart(year, month)
-
-    // Upsert month row (always mark published so existing reservations remain valid)
-    const { error: mErr } = await admin.from('availability_months').upsert(
-      {
-        month_start:  ms,
-        status:       'published',
-        published_at: new Date().toISOString(),
-        updated_at:   new Date().toISOString(),
-      },
-      { onConflict: 'month_start' }
-    )
-    if (mErr) {
-      console.error(`  WARN: Cannot upsert availability_months for ${ms}: ${mErr.message}`)
-      continue
-    }
-
-    // Upsert all days as open
-    const days = daysInMonth(year, month).map(d => ({
-      date:        d,
-      month_start: ms,
-      is_open:     true,
-      updated_at:  new Date().toISOString(),
-    }))
-
-    const { error: dErr } = await admin
-      .from('availability_days')
-      .upsert(days, { onConflict: 'date' })
-
-    if (dErr) {
-      console.error(`  WARN: Cannot upsert availability_days for ${ms}: ${dErr.message}`)
-    } else {
-      // Only update days that are NOT already set (ignoreDuplicates preserves manual changes)
-      console.log(`  ${ms}: ${days.length} days upserted as open. OK.`)
-    }
-  }
-
-  // ── STEP 4: Verify ────────────────────────────────────────────────────────
-  console.log('\nStep 3: Verifying backfill...')
-  const { data: months } = await admin
-    .from('availability_months')
-    .select('month_start, status')
-    .order('month_start')
-  console.log('  availability_months rows:', months?.map(m => `${m.month_start}(${m.status})`).join(', '))
-
-  const { count: dayCount } = await admin
-    .from('availability_days')
-    .select('*', { count: 'exact', head: true })
-  console.log(`  availability_days total rows: ${dayCount}`)
-
-  // ── STEP 5: Write RPC SQL ─────────────────────────────────────────────────
-  console.log('\nStep 4: Writing RPC migration SQL...')
+  // ── STEP 2: Write RPC SQL ─────────────────────────────────────────────────
+  console.log('\nStep 2: Writing RPC migration SQL...')
   await writeRpcSql()
 
   console.log('\n=== Migration complete ===')
   console.log('Next: Apply scripts/rpc-migration.sql in Supabase Dashboard > SQL Editor')
   console.log('This updates get_nightly_occupancy to return publication_status, is_open, day_state.')
+  console.log('\nNOTE: No months were auto-published. Create and publish months via the Kapacita planner.')
 }
 
 async function writeRpcSql() {
