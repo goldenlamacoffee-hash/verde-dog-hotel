@@ -87,8 +87,10 @@ function revalidateAvailability() {
 // ─── ensureMonthExists ────────────────────────────────────────────────────────
 
 /**
- * Idempotently creates a month row (status='draft') + all day rows (is_open=true)
+ * Idempotently creates a month row (status='draft') + all day rows (is_open=false)
  * if the month does not already exist.
+ * New months start fully closed so the admin must deliberately open dates
+ * before publishing — avoids accidentally publishing all-open months.
  * Returns the month record and all day rows.
  */
 export async function ensureMonthExists(
@@ -113,7 +115,7 @@ export async function ensureMonthExists(
     const numDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
     const days = Array.from({ length: numDays }, (_, i) => {
       const date = new Date(Date.UTC(year, month, i + 1)).toISOString().split('T')[0]
-      return { date, month_start: monthStart, is_open: true, updated_by: auth.id }
+      return { date, month_start: monthStart, is_open: false, updated_by: auth.id }
     })
     const { error: dErr } = await admin.from('availability_days').insert(days)
     if (dErr) return { ok: false, error: `Nepodařilo se vytvořit dny: ${dErr.message}` }

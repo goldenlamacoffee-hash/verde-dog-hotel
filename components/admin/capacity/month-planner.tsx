@@ -32,7 +32,7 @@ import {
   Globe, EyeOff,
   CheckSquare, XSquare,
   Loader2, AlertTriangle, CheckCircle2,
-  CalendarCheck, Copy, Pencil, X,
+  CalendarCheck, Copy, Pencil, X, PlusCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -365,6 +365,25 @@ export function MonthPlanner({
     return days
   }
 
+  // ── Prepare month — create DB row + days, enter edit mode ──────────────────
+  // Called when month === null (no row in availability_months yet).
+
+  function handlePrepareMonth() {
+    clearFeedback()
+    startTransition(async () => {
+      const res = await ensureMonthExists(monthStart)
+      if (!res.ok) {
+        setError(res.error ?? 'Nepodařilo se připravit měsíc.')
+        return
+      }
+      const days = dayRecordsToLocal(res.data!.days)
+      setLocalDays(days)
+      setMonth({ monthStart, status: 'draft', publishedAt: null })
+      setIsEditing(true)
+      setIsDirty(false)
+    })
+  }
+
   // ── Save as draft (no public revalidation) ──────────────────────────────────
 
   function handleSaveDraft() {
@@ -474,6 +493,37 @@ export function MonthPlanner({
           </div>
         )}
 
+        {/* ── NULL state: month has never been prepared ────────────────────── */}
+        {!month && !isPastMonth && (
+          <div
+            className="flex items-start gap-2.5 rounded-xl px-4 py-3"
+            style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
+          >
+            <EyeOff className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <p className="text-sm">
+              <span className="font-semibold" style={{ color: 'var(--admin-text)' }}>Měsíc zatím nebyl připraven.</span>{' '}
+              Zákazníci nemohou tento měsíc rezervovat. Kliknutím na{' '}
+              <span className="font-semibold" style={{ color: 'var(--admin-text)' }}>Připravit měsíc</span>{' '}
+              vytvoříte dny a budete je moci nastavit před zveřejněním.
+            </p>
+          </div>
+        )}
+
+        {/* ── Draft state: month exists but is not published ───────────────── */}
+        {month?.status === 'draft' && !isPastMonth && (
+          <div
+            className="flex items-start gap-2.5 rounded-xl px-4 py-3"
+            style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e' }}
+          >
+            <EyeOff className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <p className="text-sm">
+              <span className="font-semibold">Měsíc je ve stavu konceptu.</span>{' '}
+              Zákazníci jej zatím nemohou rezervovat. Nastavte dostupné dny a klikněte na{' '}
+              <span className="font-semibold">Zveřejnit měsíc</span>.
+            </p>
+          </div>
+        )}
+
         {/* ── Editing published month: changes-pending banner ─────────────── */}
         {isPublished && isEditing && !isPastMonth && (
           <div
@@ -580,22 +630,44 @@ export function MonthPlanner({
 
           {/* Status + action buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Status pill */}
+            {/* Status pill — 3 states: null | draft | published */}
             <span
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
-              style={isPublished
-                ? { background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }
-                : { background: 'var(--admin-bg)', color: 'var(--admin-text-muted)', border: '1px solid var(--admin-card-border)' }
+              style={
+                isPublished
+                  ? { background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }
+                  : month?.status === 'draft'
+                    ? { background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a' }
+                    : { background: 'var(--admin-bg)', color: 'var(--admin-text-muted)', border: '1px solid var(--admin-card-border)' }
               }
             >
               {isPublished
                 ? <><Globe className="size-3" aria-hidden="true" /> Zveřejněno</>
-                : <><EyeOff className="size-3" aria-hidden="true" /> Koncept</>
+                : month?.status === 'draft'
+                  ? <><EyeOff className="size-3" aria-hidden="true" /> Koncept</>
+                  : <><EyeOff className="size-3" aria-hidden="true" /> Nezveřejněno</>
               }
             </span>
 
             {!isPastMonth && (
               <>
+                {/* NULL state → "Připravit měsíc" (creates the DB row + days) */}
+                {!month && (
+                  <button
+                    type="button"
+                    onClick={handlePrepareMonth}
+                    disabled={pending}
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+                    style={{ background: 'var(--admin-accent)' }}
+                  >
+                    {pending
+                      ? <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                      : <PlusCircle className="size-3" aria-hidden="true" />
+                    }
+                    Připravit měsíc
+                  </button>
+                )}
+
                 {/* Published, not editing → "Upravit zveřejněný měsíc" */}
                 {isPublished && !isEditing && (
                   <button
@@ -639,8 +711,8 @@ export function MonthPlanner({
                   </>
                 )}
 
-                {/* Draft → "Uložit koncept" + "Zveřejnit měsíc" */}
-                {!isPublished && (
+                {/* Draft (row exists, not published) → "Uložit koncept" + "Zveřejnit měsíc" */}
+                {month?.status === 'draft' && (
                   <>
                     <button
                       type="button"
@@ -818,22 +890,13 @@ export function MonthPlanner({
           {/* Legend */}
           <div className="mt-3 flex flex-wrap items-center gap-4 border-t pt-3" style={{ borderColor: 'var(--admin-card-border)' }}>
             <LegendItem color="#dcfce7" border="#86efac" label="Otevřeno" />
-            <LegendItem color="#fee2e2" border="#fca5a5" label="Uzavřeno" />
+            <LegendItem color="#F1F3F5" border="#D0D5DD" label="Uzavřeno / Nezveřejněno" />
             <LegendItem color="#fef9c3" border="#fde047" label="Obsazeno (existují rezervace)" />
             <LegendItem color="#fee2e2" border="#dc2626" thick label="Plně obsazeno" />
           </div>
         </div>
 
-        {/* ── No days note ─────────────────────────────────────────────────── */}
-        {localDays.length === 0 && !isPastMonth && (
-          <div
-            className="flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm"
-            style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
-          >
-            <CalendarCheck className="size-4 shrink-0" aria-hidden="true" />
-            Tento měsíc ještě nebyl inicializován. Kliknutím na „Zveřejnit měsíc" se dny vytvoří automaticky.
-          </div>
-        )}
+
       </div>
     </>
   )
@@ -925,9 +988,12 @@ function DayCell({
                     ...(isToday ? { outlineColor: '#16a34a' } : {}),
                   }
                 : {
-                    background:  '#fee2e2',
-                    borderColor: '#fca5a5',
-                    color:       '#991b1b',
+                    // Closed = neutral gray — NOT red. Red is reserved for
+                    // "fully booked / no capacity left" (see isFullCapacity above).
+                    // Closed means: owner chose not to open this date.
+                    background:  '#F1F3F5',
+                    borderColor: '#D0D5DD',
+                    color:       '#667085',
                   }
       }
     >

@@ -98,14 +98,14 @@ const FIELD_GROUPS: { title: string; fields: FieldDef[] }[] = [
     ],
   },
   {
-    title: 'Uzavřeno',
+    title: 'Dočasně nedostupné',
     fields: [
       { key: 'closedBackground', label: 'Pozadí', bgKey: undefined },
       { key: 'closedText',       label: 'Text',   bgKey: 'closedBackground' },
     ],
   },
   {
-    title: 'Nezveřejněno',
+    title: 'Neuvolněno k rezervaci',
     fields: [
       { key: 'unreleasedBackground', label: 'Pozadí', bgKey: undefined },
       { key: 'unreleasedText',       label: 'Text',   bgKey: 'unreleasedBackground' },
@@ -216,8 +216,8 @@ function CalendarPreview({ app }: PreviewProps) {
     { day: 26, bg: app.lastBackground,       text: app.lastText,       indicator: '1',  label: 'Poslední místo' },
     { day: 27, bg: app.fullBackground,       text: app.fullText,       indicator: '×',  label: 'Plno' },
     { day: 28, bg: app.selectedBackground,   text: app.selectedText,   indicator: null, label: 'Vybráno' },
-    { day: 31, bg: app.closedBackground,     text: app.closedText,     indicator: '×',  label: 'Uzavřeno' },
-    { day: 32, bg: app.unreleasedBackground, text: app.unreleasedText, indicator: null, label: 'Nezveřejněno' },
+    { day: 31, bg: app.closedBackground,     text: app.closedText,     indicator: null, label: 'Nedostupné' },
+    { day: 32, bg: app.unreleasedBackground, text: app.unreleasedText, indicator: null, label: 'Neuvolněno' },
   ]
 
   return (

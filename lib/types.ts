@@ -168,10 +168,12 @@ export const CALENDAR_APPEARANCE_DEFAULTS: CalendarAppearance = {
   selectedText:         '#FFFFFF',
   rangeBackground:      '#D5E9DA',
   todayBorder:          '#315E41',
-  closedBackground:     '#F1F5F9',
-  closedText:           '#64748B',
-  unreleasedBackground: '#E2E8F0',
-  unreleasedText:       '#94A3B8',
+  // Closed by admin (month published, day explicitly closed — not the same as fully booked)
+  closedBackground:     '#F1F3F5',
+  closedText:           '#667085',
+  // Unreleased (month is draft or not yet created — owner has not opened these dates)
+  unreleasedBackground: '#F1F3F5',
+  unreleasedText:       '#98A2B3',
 }
 
 /**
