@@ -25,7 +25,7 @@
  * only blocks NEW reservations — existing ones are preserved.
  */
 
-import { useCallback, useState, useTransition, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronLeft, ChevronRight,
@@ -212,7 +212,15 @@ export function MonthPlanner({
   const [error,   setError]   = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [isDirty, setIsDirty] = useState(false)
-  const [pending, startTransition] = useTransition()
+
+  // Separate pending flags per operation so nav arrows are never blocked by saves.
+  const [isPreparing,   setIsPreparing]   = useState(false)
+  const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [isPublishing,  setIsPublishing]  = useState(false)
+  const [isCopying,     setIsCopying]     = useState(false)
+
+  const pending = isPreparing || isSavingDraft || isPublishing || isCopying
+  // kept as a convenience alias used by mutationsDisabled and copy buttons
 
   // Confirmation dialog state
   const [confirmDate, setConfirmDate] = useState<string | null>(null)
@@ -226,7 +234,8 @@ export function MonthPlanner({
 
   function markDirty() { setIsDirty(true) }
 
-  // Reset local state when monthStart changes (navigation)
+  // Reset local state when monthStart changes (navigation) OR when the server
+  // re-renders the same month after router.refresh() (initialMonth/initialDays change).
   useEffect(() => {
     setLocalDays(dayRecordsToLocal(initialDays))
     setMonth(initialMonth)
@@ -235,7 +244,7 @@ export function MonthPlanner({
     setError(null)
     setSuccess(null)
     setConfirmDate(null)
-  }, [monthStart]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [monthStart, initialMonth, initialDays]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
@@ -245,7 +254,7 @@ export function MonthPlanner({
       if (!ok) return
     }
     const next = addCalMonths(monthStart, delta)
-    router.push(`/admin/kapacita?month=${next.slice(0, 7)}`)
+    router.push(`/admin/kapacita?month=${next}`)
   }
 
   // ── Enter edit mode (published month) ───────────────────────────────────────
@@ -309,9 +318,10 @@ export function MonthPlanner({
 
   // ── Copy previous month — exact day-to-day ──────────────────────────────────
 
-  function handleCopyExact() {
+  async function handleCopyExact() {
     clearFeedback()
-    startTransition(async () => {
+    setIsCopying(true)
+    try {
       const res = await copyPreviousMonthExact(monthStart)
       if (!res.ok) {
         setError(res.error ?? 'Kopírování se nezdařilo.')
@@ -326,14 +336,17 @@ export function MonthPlanner({
       )
       setSuccess('Přesné kopírování dokončeno. Zkontrolujte dny a uložte.')
       markDirty()
-    })
+    } finally {
+      setIsCopying(false)
+    }
   }
 
   // ── Copy previous month — weekday pattern ───────────────────────────────────
 
-  function handleCopyWeekday() {
+  async function handleCopyWeekday() {
     clearFeedback()
-    startTransition(async () => {
+    setIsCopying(true)
+    try {
       const res = await copyPreviousMonthWeekdayPattern(monthStart)
       if (!res.ok) {
         setError(res.error ?? 'Kopírování vzoru se nezdařilo.')
@@ -348,7 +361,9 @@ export function MonthPlanner({
       )
       setSuccess('Vzor pracovních dnů byl použit. Zkontrolujte dny a uložte.')
       markDirty()
-    })
+    } finally {
+      setIsCopying(false)
+    }
   }
 
   // ── Ensure month exists (for new months) ────────────────────────────────────
@@ -368,9 +383,10 @@ export function MonthPlanner({
   // ── Prepare month — create DB row + days, enter edit mode ──────────────────
   // Called when month === null (no row in availability_months yet).
 
-  function handlePrepareMonth() {
+  async function handlePrepareMonth() {
     clearFeedback()
-    startTransition(async () => {
+    setIsPreparing(true)
+    try {
       const res = await ensureMonthExists(monthStart)
       if (!res.ok) {
         setError(res.error ?? 'Nepodařilo se připravit měsíc.')
@@ -381,14 +397,18 @@ export function MonthPlanner({
       setMonth({ monthStart, status: 'draft', publishedAt: null })
       setIsEditing(true)
       setIsDirty(false)
-    })
+      router.refresh()
+    } finally {
+      setIsPreparing(false)
+    }
   }
 
   // ── Save as draft (no public revalidation) ──────────────────────────────────
 
-  function handleSaveDraft() {
+  async function handleSaveDraft() {
     clearFeedback()
-    startTransition(async () => {
+    setIsSavingDraft(true)
+    try {
       const days = await ensureAndInit()
       if (!days) return
       const payload = days.map((d) => ({ date: d.date, is_open: d.isOpen }))
@@ -398,15 +418,19 @@ export function MonthPlanner({
       } else {
         setIsDirty(false)
         setSuccess('Koncept uložen. Zákazníci zatím nemohou měsíc rezervovat.')
+        router.refresh()
       }
-    })
+    } finally {
+      setIsSavingDraft(false)
+    }
   }
 
   // ── Save and publish atomically ──────────────────────────────────────────────
 
-  function handlePublishChanges() {
+  async function handlePublishChanges() {
     clearFeedback()
-    startTransition(async () => {
+    setIsPublishing(true)
+    try {
       const days = await ensureAndInit()
       if (!days) return
       const payload = days.map((d) => ({ date: d.date, is_open: d.isOpen }))
@@ -421,8 +445,11 @@ export function MonthPlanner({
           : { monthStart, status: 'published', publishedAt: new Date().toISOString() }
         )
         setSuccess('Změny byly atomicky uloženy a zveřejněny. Zákazníci vidí aktuální dostupnost.')
+        router.refresh()
       }
-    })
+    } finally {
+      setIsPublishing(false)
+    }
   }
 
   // ── Calendar grid ────────────────────────────────────────────────────────────
@@ -484,7 +511,7 @@ export function MonthPlanner({
               Měsíc <span className="font-semibold">{monthLabel(nextMonth)}</span> ještě nebyl zveřejněn.{' '}
               <button
                 type="button"
-                onClick={() => router.push(`/admin/kapacita?month=${nextMonth.slice(0, 7)}`)}
+                onClick={() => router.push(`/admin/kapacita?month=${nextMonth}`)}
                 className="underline underline-offset-2 hover:opacity-70"
               >
                 Přejít na {monthLabel(nextMonth)}
@@ -601,12 +628,13 @@ export function MonthPlanner({
         >
           {/* Navigation */}
           <div className="flex items-center gap-2">
+            {/* Arrows are never disabled — saves/publishes must not block navigation.
+                Unsaved-changes confirmation is handled inside navigate(). */}
             <button
               type="button"
               onClick={() => navigate(-1)}
-              disabled={pending}
               aria-label="Předchozí měsíc"
-              className="flex size-8 items-center justify-center rounded-lg border transition-colors hover:opacity-70 disabled:opacity-40"
+              className="flex size-8 items-center justify-center rounded-lg border transition-colors hover:opacity-70"
               style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
             >
               <ChevronLeft className="size-4" />
@@ -619,9 +647,8 @@ export function MonthPlanner({
             <button
               type="button"
               onClick={() => navigate(1)}
-              disabled={pending}
               aria-label="Následující měsíc"
-              className="flex size-8 items-center justify-center rounded-lg border transition-colors hover:opacity-70 disabled:opacity-40"
+              className="flex size-8 items-center justify-center rounded-lg border transition-colors hover:opacity-70"
               style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
             >
               <ChevronRight className="size-4" />
@@ -656,11 +683,11 @@ export function MonthPlanner({
                   <button
                     type="button"
                     onClick={handlePrepareMonth}
-                    disabled={pending}
+                    disabled={isPreparing}
                     className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40"
                     style={{ background: 'var(--admin-accent)' }}
                   >
-                    {pending
+                    {isPreparing
                       ? <Loader2 className="size-3 animate-spin" aria-hidden="true" />
                       : <PlusCircle className="size-3" aria-hidden="true" />
                     }
@@ -673,8 +700,7 @@ export function MonthPlanner({
                   <button
                     type="button"
                     onClick={enterEditMode}
-                    disabled={pending}
-                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
+                    className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70"
                     style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
                   >
                     <Pencil className="size-3" aria-hidden="true" />
@@ -688,7 +714,7 @@ export function MonthPlanner({
                     <button
                       type="button"
                       onClick={cancelEdits}
-                      disabled={pending}
+                      disabled={isPublishing}
                       className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
                       style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)' }}
                     >
@@ -698,11 +724,11 @@ export function MonthPlanner({
                     <button
                       type="button"
                       onClick={handlePublishChanges}
-                      disabled={pending || !isDirty}
+                      disabled={isPublishing || !isDirty}
                       className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40"
                       style={{ background: 'var(--admin-accent)' }}
                     >
-                      {pending
+                      {isPublishing
                         ? <Loader2 className="size-3 animate-spin" aria-hidden="true" />
                         : <Globe className="size-3" aria-hidden="true" />
                       }
@@ -717,11 +743,11 @@ export function MonthPlanner({
                     <button
                       type="button"
                       onClick={handleSaveDraft}
-                      disabled={pending || !isDirty}
+                      disabled={isSavingDraft || !isDirty}
                       className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
                       style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text)' }}
                     >
-                      {pending
+                      {isSavingDraft
                         ? <Loader2 className="size-3 animate-spin" aria-hidden="true" />
                         : <CheckCircle2 className="size-3" aria-hidden="true" />
                       }
@@ -730,11 +756,11 @@ export function MonthPlanner({
                     <button
                       type="button"
                       onClick={handlePublishChanges}
-                      disabled={pending}
+                      disabled={isPublishing}
                       className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-40"
                       style={{ background: 'var(--admin-accent)' }}
                     >
-                      {pending
+                      {isPublishing
                         ? <Loader2 className="size-3 animate-spin" aria-hidden="true" />
                         : <Globe className="size-3" aria-hidden="true" />
                       }
@@ -786,12 +812,12 @@ export function MonthPlanner({
             <button
               type="button"
               onClick={handleCopyExact}
-              disabled={pending}
+              disabled={isCopying}
               title="Zkopíruje dny 1:1 z předchozího měsíce (1. → 1., 2. → 2., …)"
               className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
               style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)', background: 'var(--admin-bg)' }}
             >
-              {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+              {isCopying ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
               Kopírovat předchozí měsíc
             </button>
 
@@ -799,12 +825,12 @@ export function MonthPlanner({
             <button
               type="button"
               onClick={handleCopyWeekday}
-              disabled={pending}
+              disabled={isCopying}
               title="Zkopíruje vzor pracovních dnů z předchozího měsíce (Po=otevřeno → každé Po otevřeno, …)"
               className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-70 disabled:opacity-40"
               style={{ borderColor: 'var(--admin-card-border)', color: 'var(--admin-text-muted)', background: 'var(--admin-bg)' }}
             >
-              {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <CalendarCheck className="size-3.5" aria-hidden="true" />}
+              {isCopying ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <CalendarCheck className="size-3.5" aria-hidden="true" />}
               Kopírovat režim pracovních dnů
             </button>
 
@@ -917,7 +943,7 @@ function LegendItem({ color, border, label, thick = false }: { color: string; bo
   )
 }
 
-// ─── DayCell ──────────────────────────────────────────────────────────────────
+// ─── DayCell ───��──────────────────────────────────────────────────────────────
 
 interface DayCellProps {
   day:         number
