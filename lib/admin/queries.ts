@@ -124,8 +124,44 @@ export async function getAdminServices() {
   const supabase = await createClient()
   return supabase
     .from('services')
-    .select('*, service_categories(name, slug)')
+    .select('*, service_categories(id, name, slug)')
     .order('sort_order')
+}
+
+/**
+ * Full catalogue query — all services including archived, with all new columns.
+ * Used by the admin /sluzby catalogue manager.
+ */
+export async function getAdminServicesCatalogue() {
+  const supabase = await createClient()
+  return supabase
+    .from('services')
+    .select(`
+      id, title, description, price, unit, slug, standard, active,
+      show_on_web, sort_order, category_id, archived_at,
+      available_in_reservation, internal_note, custom_unit_label,
+      service_categories(id, name, slug)
+    `)
+    .order('sort_order')
+}
+
+/** All service categories, ordered by sort_order. */
+export async function getAdminServiceCategories() {
+  const supabase = await createClient()
+  return supabase
+    .from('service_categories')
+    .select('id, name, slug, sort_order, description, visible_on_website, active')
+    .order('sort_order')
+}
+
+/**
+ * Check whether a service has any historical reservation usage.
+ * Returns true when at least one reservation_services row references it.
+ */
+export async function serviceHasHistory(serviceId: string): Promise<boolean> {
+  const supabase = await createClient()
+  const { data } = await supabase.rpc('check_service_has_history', { p_service_id: serviceId })
+  return data === true
 }
 
 // ─── CMS ──────────────────────────────────────────────────────────────────────

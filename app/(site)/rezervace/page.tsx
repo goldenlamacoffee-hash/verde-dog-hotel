@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { PageHeader } from '@/components/common/page-header'
 import { ReservationFlow } from '@/components/reservation/reservation-flow'
-import { getPublicPageSection, getPublicContactSettings, getPublicCalendarAppearance, getPublicMaximumStayNights } from '@/lib/public-data'
+import { getPublicPageSection, getPublicContactSettings, getPublicCalendarAppearance, getPublicMaximumStayNights, getPublicServicesForReservation } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'Rezervace pobytu',
@@ -11,11 +11,12 @@ export const metadata: Metadata = {
 }
 
 export default async function ReservationPage() {
-  const [hero, contact, calendarAppearance, maximumStayNights] = await Promise.all([
+  const [hero, contact, calendarAppearance, maximumStayNights, services] = await Promise.all([
     getPublicPageSection('rezervace', 'hero'),
     getPublicContactSettings(),
     getPublicCalendarAppearance(),
     getPublicMaximumStayNights(),
+    getPublicServicesForReservation(),
   ])
 
   return (
@@ -32,6 +33,7 @@ export default async function ReservationPage() {
               contactEmail={contact.email ?? null}
               calendarAppearance={calendarAppearance}
               maximumStayNights={maximumStayNights}
+              services={services}
             />
           </Suspense>
         </div>

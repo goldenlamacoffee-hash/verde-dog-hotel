@@ -19,6 +19,7 @@ import { StepSummary } from './steps/step-summary'
 import { StepDone } from './steps/step-done'
 import { EstimatePanel } from './estimate-panel'
 import type { CalendarAppearance } from '@/lib/types'
+import type { ReservationService } from '@/lib/public-data'
 
 type Errors = Record<string, string>
 
@@ -32,9 +33,14 @@ interface ReservationFlowProps {
    * null = no maximum. Positive integer = stay must not exceed this value.
    */
   maximumStayNights?: number | null
+  /**
+   * Services available in the reservation flow, fetched server-side from the DB.
+   * Falls back to the static content/services.ts list when not provided.
+   */
+  services?: ReservationService[]
 }
 
-export function ReservationFlow({ contactEmail, calendarAppearance, maximumStayNights }: ReservationFlowProps) {
+export function ReservationFlow({ contactEmail, calendarAppearance, maximumStayNights, services = [] }: ReservationFlowProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   // Track the last-seen `new` token so we only reset once per unique value.
@@ -331,6 +337,7 @@ export function ReservationFlow({ contactEmail, calendarAppearance, maximumStayN
           {activeStep.id === 'services' && (
             <StepServices
               draft={draft}
+              services={services}
               onChange={update}
               onNext={next}
               onBack={back}

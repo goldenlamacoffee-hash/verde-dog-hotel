@@ -74,6 +74,24 @@ export function formatAdminDateTime(
   return opts?.withSeconds ? adminDateTimeSecFmt.format(d) : adminDateTimeFmt.format(d)
 }
 
+/**
+ * Display label for a DB unit string (night | day | stay | walk | item | hour).
+ * Accepts an optional custom_unit_label override from the catalogue.
+ */
+const DB_UNIT_LABELS: Record<string, string> = {
+  night: 'za noc',
+  day:   'za den',
+  stay:  'za pobyt',
+  walk:  'za procházku',
+  item:  'jednorázově',
+  hour:  'za hodinu',
+}
+
+export function dbUnitLabel(unit: string, customLabel?: string | null): string {
+  if (customLabel && customLabel.trim()) return customLabel.trim()
+  return DB_UNIT_LABELS[unit] ?? `za ${unit}`
+}
+
 /** Whole nights between two ISO date strings (Europe/Prague assumptions). */
 export function nightsBetween(
   arrival: string | null,
