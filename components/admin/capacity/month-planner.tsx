@@ -234,8 +234,12 @@ export function MonthPlanner({
 
   function markDirty() { setIsDirty(true) }
 
-  // Reset local state when monthStart changes (navigation) OR when the server
-  // re-renders the same month after router.refresh() (initialMonth/initialDays change).
+  // Reset local state only when monthStart changes (user navigated to a different
+  // month). We intentionally do NOT add initialMonth/initialDays to deps: those
+  // props are new object references on every render and would reset optimistic
+  // state mid-operation (e.g. wipe the draft status set by handlePrepareMonth
+  // before router.refresh() resolves). Server data is correctly loaded on the
+  // next navigation.
   useEffect(() => {
     setLocalDays(dayRecordsToLocal(initialDays))
     setMonth(initialMonth)
@@ -244,7 +248,7 @@ export function MonthPlanner({
     setError(null)
     setSuccess(null)
     setConfirmDate(null)
-  }, [monthStart, initialMonth, initialDays]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [monthStart]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
