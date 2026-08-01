@@ -176,6 +176,75 @@ export const CALENDAR_APPEARANCE_DEFAULTS: CalendarAppearance = {
   unreleasedText:       '#98A2B3',
 }
 
+// ─── Service catalogue DB types ───────────────────────────────────────────────
+
+/**
+ * Raw row shape returned from the `service_categories` table (after migration).
+ */
+export interface ServiceCategoryRow {
+  id: number
+  name: string
+  slug: string
+  sort_order: number
+  description: string | null
+  visible_on_website: boolean
+  active: boolean
+}
+
+/**
+ * Raw row shape returned from the `services` table (after migration).
+ * Includes the joined category.
+ */
+export interface ServiceRow {
+  id: string
+  title: string
+  description: string | null
+  price: number
+  unit: string                       // DB column: night | day | stay | walk | item | hour
+  slug: string | null
+  standard: boolean
+  active: boolean
+  show_on_web: boolean
+  sort_order: number
+  category_id: number | null
+  // new columns
+  archived_at: string | null
+  available_in_reservation: boolean
+  internal_note: string | null
+  custom_unit_label: string | null
+  // joined
+  service_categories: Pick<ServiceCategoryRow, 'id' | 'name' | 'slug'> | null
+}
+
+/** Shape expected by upsertService action. */
+export interface UpsertServicePayload {
+  id?: string
+  title: string
+  description?: string
+  price: number
+  unit: string
+  slug?: string
+  standard: boolean
+  active: boolean
+  show_on_web: boolean
+  available_in_reservation: boolean
+  sort_order: number
+  category_id?: number | null
+  internal_note?: string
+  custom_unit_label?: string
+}
+
+/** Shape expected by upsertServiceCategory action. */
+export interface UpsertServiceCategoryPayload {
+  id?: number
+  name: string
+  slug: string
+  sort_order: number
+  description?: string
+  visible_on_website: boolean
+  active: boolean
+}
+
 /**
  * Canonical shape of the `contact` row in site_settings.
  * Used by: admin save action, admin editor, public-data helper,

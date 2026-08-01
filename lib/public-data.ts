@@ -209,6 +209,7 @@ export async function getPublicPriceItems(): Promise<PriceItem[]> {
       .select('id, title, description, price, unit, standard, sort_order')
       .eq('active', true)
       .eq('show_on_web', true)
+      .is('archived_at', null)
       .order('sort_order')
     if (data && data.length > 0) {
       return data.map((s: any): PriceItem => ({
@@ -227,6 +228,76 @@ export async function getPublicPriceItems(): Promise<PriceItem[]> {
 }
 
 // ─── Testimonials ───────────────────────────────────────────────────���─────────
+
+// ─── Services for reservation flow ───────────────────────────────────────────
+
+export interface ReservationService {
+  /** DB UUID — passed to the API as selectedServices */
+  id: string
+  /** Display slug used as fallback key */
+  slug: string | null
+  title: string
+  description: string
+  price: number
+  /** DB unit string: night | day | stay | walk | item | hour */
+  unit: string
+  /** Overrides the default unit display string when set */
+  custom_unit_label: string | null
+  /** If true, service is included by default (shown in "V ceně pobytu" list) */
+  standard: boolean
+}
+
+/**
+ * Fetch services available in the reservation flow from the DB.
+ * Returns only active, non-archived services with available_in_reservation = true,
+ * ordered by sort_order. Falls back to the static content/services.ts list.
+ */
+export async function getPublicServicesForReservation(): Promise<ReservationService[]> {
+  try {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('services')
+      .select('id, title, description, price, unit, slug, standard, custom_unit_label')
+      .eq('active', true)
+      .eq('available_in_reservation', true)
+      .is('archived_at', null)
+      .order('sort_order')
+    if (data && data.length > 0) {
+      return data.map((s: any): ReservationService => ({
+        id: s.id,
+        slug: s.slug ?? null,
+        title: s.title,
+        description: s.description ?? '',
+        price: Number(s.price),
+        unit: s.unit,
+        custom_unit_label: s.custom_unit_label ?? null,
+        standard: !!s.standard,
+      }))
+    }
+  } catch {
+    // fall through to static
+  }
+  // Static fallback — translate ServiceOption shape
+  const { services } = await import('@/content/services')
+  const UNIT_TO_DB: Record<string, string> = {
+    'per-night': 'night',
+    'per-day':   'day',
+    'per-stay':  'stay',
+    'per-walk':  'walk',
+    'one-off':   'item',
+  }
+  return services.map((s) => ({
+    id: s.id,
+    slug: s.id,
+    title: s.title,
+    description: s.description,
+    price: s.price,
+    unit: UNIT_TO_DB[s.unit] ?? 'item',
+    custom_unit_label: null,
+    standard: !!s.standard,
+  }))
+}
 
 export async function getPublicTestimonials(): Promise<Testimonial[]> {
   try {

@@ -66,7 +66,8 @@ export async function computeServerEstimate(
       supabase
         .from('services')
         .select('id, slug, title, price, unit, standard, active')
-        .eq('active', true),
+        .eq('active', true)
+        .is('archived_at', null),
       supabase
         .from('pricing_rules')
         .select('rule_type, date_from, date_to, min_nights, max_nights, dog_count_min, modifier_type, modifier_value, active, sort_order')

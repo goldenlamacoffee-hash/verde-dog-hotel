@@ -195,6 +195,8 @@ export async function POST(req: NextRequest) {
       .select('id, slug')
       .in('slug', draft.selectedServices)
       .eq('active', true)
+      .is('archived_at', null)
+      .eq('available_in_reservation', true)
     if (svcErr) {
       console.error('[verde] services slug lookup error:', svcErr.message)
       return NextResponse.json({ error: 'Interní chyba serveru.' }, { status: 500 })

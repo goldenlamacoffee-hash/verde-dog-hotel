@@ -2,18 +2,19 @@
 
 import { Check } from 'lucide-react'
 import { StepIntro, StepNav } from '../step-nav'
-import { services } from '@/content/services'
-import { formatPrice, unitLabel } from '@/lib/format'
+import { formatPrice, dbUnitLabel } from '@/lib/format'
 import type { ReservationDraft } from '@/lib/reservation'
+import type { ReservationService } from '@/lib/public-data'
 
 interface Props {
   draft: ReservationDraft
+  services: ReservationService[]
   onChange: (patch: Partial<ReservationDraft>) => void
   onNext: () => void
   onBack: () => void
 }
 
-export function StepServices({ draft, onChange, onNext, onBack }: Props) {
+export function StepServices({ draft, services, onChange, onNext, onBack }: Props) {
   const standard = services.filter((s) => s.standard)
   const optional = services.filter((s) => !s.standard)
 
@@ -32,17 +33,19 @@ export function StepServices({ draft, onChange, onNext, onBack }: Props) {
         description="Základní péče je vždy v ceně. Vyberte nadstandard, který vašemu psovi zpříjemní pobyt."
       />
 
-      <div className="mb-8 rounded-xl border border-verde-green/20 bg-secondary/50 p-5">
-        <p className="label-caps text-verde-wood">V ceně pobytu</p>
-        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-          {standard.map((service) => (
-            <li key={service.id} className="flex items-start gap-2 text-sm text-verde-deep">
-              <Check className="mt-0.5 size-4 shrink-0 text-verde-green" aria-hidden="true" />
-              {service.title}
-            </li>
-          ))}
-        </ul>
-      </div>
+      {standard.length > 0 && (
+        <div className="mb-8 rounded-xl border border-verde-green/20 bg-secondary/50 p-5">
+          <p className="label-caps text-verde-wood">V ceně pobytu</p>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+            {standard.map((service) => (
+              <li key={service.id} className="flex items-start gap-2 text-sm text-verde-deep">
+                <Check className="mt-0.5 size-4 shrink-0 text-verde-green" aria-hidden="true" />
+                {service.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {optional.map((service) => {
@@ -81,7 +84,9 @@ export function StepServices({ draft, onChange, onNext, onBack }: Props) {
               </p>
               <span className="mt-3 text-sm font-semibold text-verde-green">
                 {formatPrice(service.price)}
-                <span className="font-normal text-verde-stone"> {unitLabel(service.unit)}</span>
+                <span className="font-normal text-verde-stone">
+                  {' '}{dbUnitLabel(service.unit, service.custom_unit_label)}
+                </span>
               </span>
             </button>
           )
