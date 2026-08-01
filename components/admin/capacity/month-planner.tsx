@@ -421,7 +421,7 @@ export function MonthPlanner({
         setError(res.error ?? 'Uložení se nezdařilo.')
       } else {
         setIsDirty(false)
-        setSuccess('Koncept uložen. Zákazníci zatím nemohou měsíc rezervovat.')
+        setSuccess('Koncept uložen. Z��kazníci zatím nemohou měsíc rezervovat.')
         router.refresh()
       }
     } finally {
