@@ -15,11 +15,13 @@
  */
 
 import { useState, useTransition, useMemo } from 'react'
+import { ChevronUp, ChevronDown } from 'lucide-react'
 import {
   upsertServiceCatalogue,
   archiveService,
   restoreService,
   deleteServiceSafe,
+  reorderServices,
   upsertServiceCategory,
   deleteServiceCategory,
 } from '@/lib/admin/service-actions'
@@ -66,6 +68,8 @@ const INPUT_STYLE = { background: 'var(--admin-bg)', border: '1px solid var(--ad
 
 type ServiceEditState = {
   id?: string
+  /** Optimistic-concurrency version from DB — must be sent on update. */
+  revision: number
   title: string
   description: string
   price: number
@@ -92,6 +96,7 @@ type CategoryEditState = {
 }
 
 const EMPTY_SERVICE: ServiceEditState = {
+  revision: 1,
   title: '',
   description: '',
   price: 0,
@@ -137,6 +142,8 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
 
   const [isPending, startTransition] = useTransition()
   const [banner, setBanner] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null)
+  /** Set when a concurrent-edit conflict is detected — shows a sticky reload prompt. */
+  const [conflictBanner, setConflictBanner] = useState<string | null>(null)
 
   // Confirm-delete dialog state
   const [confirmDelete, setConfirmDelete] = useState<{ serviceId: string; hasHistory: boolean } | null>(null)
@@ -187,6 +194,7 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
   function openEditService(s: ServiceRow) {
     setEditingService({
       id: s.id,
+      revision: s.revision ?? 1,
       title: s.title,
       description: s.description ?? '',
       price: s.price,
@@ -209,6 +217,7 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
     startTransition(async () => {
       const result = await upsertServiceCatalogue({
         id: editingService.id,
+        revision: editingService.revision,
         title: editingService.title,
         description: editingService.description,
         price: editingService.price,
@@ -223,53 +232,115 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
         internal_note: editingService.internal_note,
         custom_unit_label: editingService.custom_unit_label,
       })
-      if (!result.ok) { flash('err', result.error ?? 'Chyba při ukládání.'); return }
+      if (!result.ok) {
+        if (result.code === 'CONFLICT') {
+          setEditingService(null)
+          setConflictBanner(result.error ?? 'Konflikt úprav — načtěte stránku znovu.')
+        } else {
+          flash('err', result.error ?? 'Chyba při ukládání.')
+        }
+        return
+      }
       flash('ok', editingService.id ? 'Služba uložena.' : 'Služba vytvořena.')
       setEditingService(null)
-      // Optimistic update — refresh by mutating state
       if (editingService.id) {
         const cat = categories.find((c) => c.id === editingService.category_id) ?? null
+        const newRevision = result.data?.revision ?? editingService.revision + 1
+        // If the service was previously standard and is no longer, or a new standard was set,
+        // demote old standard item in local state too
+        const settingStandard = editingService.standard && editingService.active
         setServices((prev) =>
-          prev.map((s) =>
-            s.id === editingService.id
-              ? {
-                  ...s,
-                  ...editingService,
-                  archived_at: null,
-                  service_categories: cat ? { id: cat.id, name: cat.name, slug: cat.slug } : null,
-                }
-              : s,
-          ),
+          prev.map((s) => {
+            if (s.id === editingService.id) {
+              return {
+                ...s,
+                ...editingService,
+                revision: newRevision,
+                archived_at: null,
+                service_categories: cat ? { id: cat.id, name: cat.name, slug: cat.slug } : null,
+              }
+            }
+            // Demote any other standard service in optimistic state
+            if (settingStandard && s.standard && s.active && !s.archived_at) {
+              return { ...s, standard: false }
+            }
+            return s
+          }),
         )
       } else {
-        // New service — will appear on next server refresh; trigger route refresh
         window.location.reload()
       }
     })
   }
 
   function handleArchive(serviceId: string) {
+    const svc = services.find((s) => s.id === serviceId)
     startTransition(async () => {
-      const result = await archiveService(serviceId)
-      if (!result.ok) { flash('err', result.error ?? 'Chyba.'); return }
+      const result = await archiveService(serviceId, svc?.revision ?? 1)
+      if (!result.ok) {
+        if (result.code === 'CONFLICT') {
+          setConflictBanner(result.error ?? 'Konflikt úprav — načtěte stránku znovu.')
+        } else {
+          flash('err', result.error ?? 'Chyba.')
+        }
+        return
+      }
       flash('ok', 'Služba archivována.')
       setServices((prev) =>
         prev.map((s) =>
-          s.id === serviceId ? { ...s, archived_at: new Date().toISOString(), active: false } : s,
+          s.id === serviceId
+            ? { ...s, archived_at: new Date().toISOString(), active: false, revision: (s.revision ?? 1) + 1 }
+            : s,
         ),
       )
     })
   }
 
   function handleRestore(serviceId: string) {
+    const svc = services.find((s) => s.id === serviceId)
     startTransition(async () => {
-      const result = await restoreService(serviceId)
-      if (!result.ok) { flash('err', result.error ?? 'Chyba.'); return }
+      const result = await restoreService(serviceId, svc?.revision ?? 1)
+      if (!result.ok) {
+        if (result.code === 'CONFLICT') {
+          setConflictBanner(result.error ?? 'Konflikt úprav — načtěte stránku znovu.')
+        } else {
+          flash('err', result.error ?? 'Chyba.')
+        }
+        return
+      }
       flash('ok', 'Služba obnovena.')
       setServices((prev) =>
         prev.map((s) =>
-          s.id === serviceId ? { ...s, archived_at: null, active: true } : s,
+          s.id === serviceId
+            ? { ...s, archived_at: null, active: true, revision: (s.revision ?? 1) + 1 }
+            : s,
         ),
+      )
+    })
+  }
+
+  function handleMoveService(serviceId: string, direction: 'up' | 'down') {
+    // Find all visible services in the same category group (sorted by sort_order)
+    const svc = services.find((s) => s.id === serviceId)
+    if (!svc) return
+    const siblings = services
+      .filter((s) => s.category_id === svc.category_id && !s.archived_at)
+      .sort((a, b) => a.sort_order - b.sort_order)
+    const idx = siblings.findIndex((s) => s.id === serviceId)
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= siblings.length) return
+    const target = siblings[swapIdx]
+    const swappedA = { id: serviceId, sort_order: target.sort_order }
+    const swappedB = { id: target.id, sort_order: svc.sort_order }
+    startTransition(async () => {
+      const result = await reorderServices([swappedA, swappedB])
+      if (!result.ok) { flash('err', result.error ?? 'Chyba při řazení.'); return }
+      setServices((prev) =>
+        prev.map((s) => {
+          if (s.id === serviceId) return { ...s, sort_order: target.sort_order }
+          if (s.id === target.id) return { ...s, sort_order: svc.sort_order }
+          return s
+        }),
       )
     })
   }
@@ -350,6 +421,23 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
 
   return (
     <div className="space-y-5">
+
+      {/* Conflict banner — sticky, requires explicit reload */}
+      {conflictBanner && (
+        <div
+          className="rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-4"
+          style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b' }}
+        >
+          <span className="font-medium">{conflictBanner}</span>
+          <button
+            onClick={() => window.location.reload()}
+            className="shrink-0 rounded-lg px-3 py-1 text-xs font-semibold"
+            style={{ background: '#f59e0b', color: '#fff' }}
+          >
+            Načíst znovu
+          </button>
+        </div>
+      )}
 
       {/* Banner */}
       {banner && (
@@ -496,7 +584,7 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--admin-card-border)' }}>
-                  {['Název', 'Popis', 'Cena', 'Slug', 'Web', 'Rezervace', 'Aktivní', ''].map((h) => (
+                  {['', 'Název', 'Popis', 'Cena', 'Slug', 'Web', 'Rezervace', 'Aktivní', ''].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-2.5 text-left text-xs font-medium whitespace-nowrap"
@@ -508,7 +596,7 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
                 </tr>
               </thead>
               <tbody>
-                {items.map((s) => (
+                {[...items].sort((a, b) => a.sort_order - b.sort_order).map((s, idx, arr) => (
                   <ServiceRow
                     key={s.id}
                     service={s}
@@ -516,6 +604,9 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
                     onArchive={handleArchive}
                     onRestore={handleRestore}
                     onDelete={handleDeleteRequest}
+                    onMove={handleMoveService}
+                    isFirst={idx === 0}
+                    isLast={idx === arr.length - 1}
                     isPending={isPending}
                   />
                 ))}
@@ -596,6 +687,9 @@ function ServiceRow({
   onArchive,
   onRestore,
   onDelete,
+  onMove,
+  isFirst,
+  isLast,
   isPending,
 }: {
   service: ServiceRow
@@ -603,6 +697,9 @@ function ServiceRow({
   onArchive: (id: string) => void
   onRestore: (id: string) => void
   onDelete: (id: string) => void
+  onMove: (id: string, dir: 'up' | 'down') => void
+  isFirst: boolean
+  isLast: boolean
   isPending: boolean
 }) {
   const isArchived = !!s.archived_at
@@ -677,6 +774,29 @@ function ServiceRow({
       {/* Actions */}
       <td className="px-4 py-3 whitespace-nowrap">
         <div className="flex items-center gap-3">
+          {/* Reorder buttons */}
+          {!isArchived && (
+            <div className="flex flex-col">
+              <button
+                onClick={() => onMove(s.id, 'up')}
+                disabled={isPending || isFirst}
+                className="disabled:opacity-20"
+                aria-label="Posunout nahoru"
+                title="Posunout nahoru"
+              >
+                <ChevronUp className="size-3.5" style={{ color: 'var(--admin-text-muted)' }} />
+              </button>
+              <button
+                onClick={() => onMove(s.id, 'down')}
+                disabled={isPending || isLast}
+                className="disabled:opacity-20"
+                aria-label="Posunout dolů"
+                title="Posunout dolů"
+              >
+                <ChevronDown className="size-3.5" style={{ color: 'var(--admin-text-muted)' }} />
+              </button>
+            </div>
+          )}
           {!isArchived && (
             <button
               onClick={() => onEdit(s)}
@@ -891,7 +1011,11 @@ function ServiceDrawer({
               { key: 'active' as const, label: 'Aktivní', hint: 'Neaktivní služby jsou skryty na webu i v rezervaci.' },
               { key: 'show_on_web' as const, label: 'Zobrazit na webu (ceník, pece-a-ubytovani)', hint: '' },
               { key: 'available_in_reservation' as const, label: 'Dostupná v rezervačním formuláři', hint: '' },
-              { key: 'standard' as const, label: 'Zahrnuta v ceně pobytu (Standard)', hint: 'Standard služby se zobrazí v sekci „V ceně pobytu".' },
+              {
+                key: 'standard' as const,
+                label: 'Zahrnuta v ceně pobytu (Standard)',
+                hint: 'Standard služby se zobrazí v sekci „V ceně pobytu". Může existovat pouze jedna — předchozí standardní položka bude automaticky odznačena.',
+              },
             ].map(({ key, label, hint }) => (
               <label key={key} className="flex items-start gap-3 cursor-pointer">
                 <input
