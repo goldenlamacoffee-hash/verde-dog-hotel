@@ -74,7 +74,6 @@ type ServiceEditState = {
   description: string
   price: number
   unit: string
-  slug: string
   standard: boolean
   active: boolean
   show_on_web: boolean
@@ -101,7 +100,6 @@ const EMPTY_SERVICE: ServiceEditState = {
   description: '',
   price: 0,
   unit: 'night',
-  slug: '',
   standard: false,
   active: true,
   show_on_web: true,
@@ -199,7 +197,6 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
       description: s.description ?? '',
       price: s.price,
       unit: s.unit,
-      slug: s.slug ?? '',
       standard: s.standard,
       active: s.active,
       show_on_web: s.show_on_web,
@@ -222,7 +219,6 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
         description: editingService.description,
         price: editingService.price,
         unit: editingService.unit,
-        slug: editingService.slug,
         standard: editingService.standard,
         active: editingService.active,
         show_on_web: editingService.show_on_web,
@@ -417,7 +413,7 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
     })
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────���────────
 
   return (
     <div className="space-y-5">
@@ -621,6 +617,9 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
         <ServiceDrawer
           editing={editingService}
           categories={categories}
+          currentSlug={editingService.id
+            ? (services.find((s) => s.id === editingService.id)?.slug ?? null)
+            : null}
           onChange={setEditingService}
           onSave={saveService}
           onCancel={() => setEditingService(null)}
@@ -854,6 +853,7 @@ function Dot({ active }: { active: boolean }) {
 function ServiceDrawer({
   editing,
   categories,
+  currentSlug,
   onChange,
   onSave,
   onCancel,
@@ -861,6 +861,8 @@ function ServiceDrawer({
 }: {
   editing: ServiceEditState
   categories: ServiceCategoryRow[]
+  /** Existing slug for the service being edited — read-only display. */
+  currentSlug?: string | null
   onChange: (s: ServiceEditState) => void
   onSave: () => void
   onCancel: () => void
@@ -910,6 +912,21 @@ function ServiceDrawer({
               placeholder="Noční pobyt"
             />
           </Field>
+
+          {/* Read-only slug — generated server-side on create, immutable on edit */}
+          {editing.id && currentSlug && (
+            <Field
+              label="Slug (URL identifikátor)"
+              hint="Generováno automaticky při vytvoření. Nelze změnit — zachovává stabilní URL."
+            >
+              <p
+                className="rounded-lg px-3 py-2 text-sm select-all"
+                style={{ ...INPUT_STYLE, color: 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)', cursor: 'text' }}
+              >
+                {currentSlug}
+              </p>
+            </Field>
+          )}
 
           <Field label="Popis">
             <textarea
@@ -984,16 +1001,6 @@ function ServiceDrawer({
               />
             </Field>
           </div>
-
-          <Field label="Slug (URL identifikátor)" hint="Musí odpovídat hodnotě v kódu rezervačního formuláře. Např. overnight-stay.">
-            <input
-              value={editing.slug}
-              onChange={(e) => set('slug', e.target.value)}
-              className={INPUT_CLS}
-              style={{ ...INPUT_STYLE, fontFamily: 'var(--font-mono)' } as React.CSSProperties}
-              placeholder="overnight-stay"
-            />
-          </Field>
 
           <Field label="Interní poznámka" hint="Vidí pouze administrátor, nikdy zákazník.">
             <textarea

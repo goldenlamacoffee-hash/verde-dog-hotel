@@ -20,6 +20,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getAdminProfile } from '@/lib/auth/roles'
+import { slugifyServiceNameUnique } from '@/lib/slug'
 import type { UpsertServicePayload, UpsertServiceCategoryPayload } from '@/lib/types'
 
 // ─── Shared result type ───────────────────────────────────────────────────────
@@ -135,12 +136,27 @@ export async function upsertServiceCatalogue(
 
   const newRevision = (payload.revision ?? 0) + 1
 
+  // ── Slug handling ─────────────────────────────────────────────────────────
+  // On CREATE: generate a clean slug server-side; never trust client input.
+  // On UPDATE: leave the slug column untouched (preserve the original stable URL).
+  let resolvedSlug: string | undefined = undefined
+  if (!payload.id) {
+    // Fetch all existing slugs to detect collisions
+    const { data: existingRows } = await supabase
+      .from('services')
+      .select('slug')
+      .not('slug', 'is', null)
+    const existingSlugs = (existingRows ?? []).map((r) => r.slug as string)
+    resolvedSlug = slugifyServiceNameUnique(title, existingSlugs)
+  }
+
   const row = {
     title,
     description:              payload.description?.trim() || null,
     price:                    payload.price,
     unit:                     payload.unit,
-    slug:                     payload.slug?.trim() || null,
+    // Only include slug when creating; on update the column is left unchanged
+    ...(resolvedSlug !== undefined ? { slug: resolvedSlug } : {}),
     standard:                 payload.standard,
     active:                   payload.active,
     show_on_web:              payload.show_on_web,
