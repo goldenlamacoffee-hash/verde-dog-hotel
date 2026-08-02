@@ -72,9 +72,9 @@ type ServiceEditState = {
   revision: number
   title: string
   description: string
-  price: number
+  /** Stored as string while editing to allow "", "2500", "2500,50" etc. */
+  price: string
   unit: string
-  slug: string
   standard: boolean
   active: boolean
   show_on_web: boolean
@@ -99,9 +99,8 @@ const EMPTY_SERVICE: ServiceEditState = {
   revision: 1,
   title: '',
   description: '',
-  price: 0,
+  price: '',
   unit: 'night',
-  slug: '',
   standard: false,
   active: true,
   show_on_web: true,
@@ -197,9 +196,8 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
       revision: s.revision ?? 1,
       title: s.title,
       description: s.description ?? '',
-      price: s.price,
+      price: String(s.price),
       unit: s.unit,
-      slug: s.slug ?? '',
       standard: s.standard,
       active: s.active,
       show_on_web: s.show_on_web,
@@ -214,15 +212,23 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
   function saveService() {
     if (!editingService) return
     if (!editingService.title.trim()) { flash('err', 'Název služby je povinný.'); return }
+
+    // Normalize price string: trim, replace Czech comma decimal separator
+    const normalizedPrice = editingService.price.trim().replace(',', '.')
+    const priceAmount = Number(normalizedPrice)
+    if (normalizedPrice === '' || !Number.isFinite(priceAmount) || priceAmount < 0) {
+      flash('err', 'Zadejte platnou cenu.')
+      return
+    }
+
     startTransition(async () => {
       const result = await upsertServiceCatalogue({
         id: editingService.id,
         revision: editingService.revision,
         title: editingService.title,
         description: editingService.description,
-        price: editingService.price,
+        price: priceAmount,
         unit: editingService.unit,
-        slug: editingService.slug,
         standard: editingService.standard,
         active: editingService.active,
         show_on_web: editingService.show_on_web,
@@ -255,6 +261,8 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
               return {
                 ...s,
                 ...editingService,
+                // price is stored as string in edit state; ServiceRow expects number
+                price: priceAmount,
                 revision: newRevision,
                 archived_at: null,
                 service_categories: cat ? { id: cat.id, name: cat.name, slug: cat.slug } : null,
@@ -417,7 +425,7 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
     })
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────���────────
 
   return (
     <div className="space-y-5">
@@ -621,6 +629,9 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
         <ServiceDrawer
           editing={editingService}
           categories={categories}
+          currentSlug={editingService.id
+            ? (services.find((s) => s.id === editingService.id)?.slug ?? null)
+            : null}
           onChange={setEditingService}
           onSave={saveService}
           onCancel={() => setEditingService(null)}
@@ -854,6 +865,7 @@ function Dot({ active }: { active: boolean }) {
 function ServiceDrawer({
   editing,
   categories,
+  currentSlug,
   onChange,
   onSave,
   onCancel,
@@ -861,6 +873,8 @@ function ServiceDrawer({
 }: {
   editing: ServiceEditState
   categories: ServiceCategoryRow[]
+  /** Existing slug for the service being edited — read-only display. */
+  currentSlug?: string | null
   onChange: (s: ServiceEditState) => void
   onSave: () => void
   onCancel: () => void
@@ -911,6 +925,21 @@ function ServiceDrawer({
             />
           </Field>
 
+          {/* Read-only slug — generated server-side on create, immutable on edit */}
+          {editing.id && currentSlug && (
+            <Field
+              label="Slug (URL identifikátor)"
+              hint="Generováno automaticky při vytvoření. Nelze změnit — zachovává stabilní URL."
+            >
+              <p
+                className="rounded-lg px-3 py-2 text-sm select-all"
+                style={{ ...INPUT_STYLE, color: 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)', cursor: 'text' }}
+              >
+                {currentSlug}
+              </p>
+            </Field>
+          )}
+
           <Field label="Popis">
             <textarea
               rows={3}
@@ -925,12 +954,13 @@ function ServiceDrawer({
           <div className="grid grid-cols-2 gap-4">
             <Field label="Cena (Kč)">
               <input
-                type="number"
-                min={0}
+                type="text"
+                inputMode="decimal"
                 value={editing.price}
-                onChange={(e) => set('price', Number(e.target.value))}
+                onChange={(e) => set('price', e.target.value)}
                 className={INPUT_CLS}
                 style={INPUT_STYLE}
+                placeholder="0"
               />
             </Field>
 
@@ -984,16 +1014,6 @@ function ServiceDrawer({
               />
             </Field>
           </div>
-
-          <Field label="Slug (URL identifikátor)" hint="Musí odpovídat hodnotě v kódu rezervačního formuláře. Např. overnight-stay.">
-            <input
-              value={editing.slug}
-              onChange={(e) => set('slug', e.target.value)}
-              className={INPUT_CLS}
-              style={{ ...INPUT_STYLE, fontFamily: 'var(--font-mono)' } as React.CSSProperties}
-              placeholder="overnight-stay"
-            />
-          </Field>
 
           <Field label="Interní poznámka" hint="Vidí pouze administrátor, nikdy zákazník.">
             <textarea
