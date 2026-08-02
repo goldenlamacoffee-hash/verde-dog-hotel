@@ -72,7 +72,8 @@ type ServiceEditState = {
   revision: number
   title: string
   description: string
-  price: number
+  /** Stored as string while editing to allow "", "2500", "2500,50" etc. */
+  price: string
   unit: string
   standard: boolean
   active: boolean
@@ -98,7 +99,7 @@ const EMPTY_SERVICE: ServiceEditState = {
   revision: 1,
   title: '',
   description: '',
-  price: 0,
+  price: '',
   unit: 'night',
   standard: false,
   active: true,
@@ -195,7 +196,7 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
       revision: s.revision ?? 1,
       title: s.title,
       description: s.description ?? '',
-      price: s.price,
+      price: String(s.price),
       unit: s.unit,
       standard: s.standard,
       active: s.active,
@@ -211,13 +212,22 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
   function saveService() {
     if (!editingService) return
     if (!editingService.title.trim()) { flash('err', 'Název služby je povinný.'); return }
+
+    // Normalize price string: trim, replace Czech comma decimal separator
+    const normalizedPrice = editingService.price.trim().replace(',', '.')
+    const priceAmount = Number(normalizedPrice)
+    if (normalizedPrice === '' || !Number.isFinite(priceAmount) || priceAmount < 0) {
+      flash('err', 'Zadejte platnou cenu.')
+      return
+    }
+
     startTransition(async () => {
       const result = await upsertServiceCatalogue({
         id: editingService.id,
         revision: editingService.revision,
         title: editingService.title,
         description: editingService.description,
-        price: editingService.price,
+        price: priceAmount,
         unit: editingService.unit,
         standard: editingService.standard,
         active: editingService.active,
@@ -251,6 +261,8 @@ export function ServicesCatalogueManager({ initialServices, initialCategories }:
               return {
                 ...s,
                 ...editingService,
+                // price is stored as string in edit state; ServiceRow expects number
+                price: priceAmount,
                 revision: newRevision,
                 archived_at: null,
                 service_categories: cat ? { id: cat.id, name: cat.name, slug: cat.slug } : null,
@@ -942,12 +954,13 @@ function ServiceDrawer({
           <div className="grid grid-cols-2 gap-4">
             <Field label="Cena (Kč)">
               <input
-                type="number"
-                min={0}
+                type="text"
+                inputMode="decimal"
                 value={editing.price}
-                onChange={(e) => set('price', Number(e.target.value))}
+                onChange={(e) => set('price', e.target.value)}
                 className={INPUT_CLS}
                 style={INPUT_STYLE}
+                placeholder="0"
               />
             </Field>
 

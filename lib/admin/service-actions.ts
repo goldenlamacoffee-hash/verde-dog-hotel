@@ -97,7 +97,9 @@ export async function upsertServiceCatalogue(
 
   const title = payload.title.trim()
   if (!title) return { ok: false, error: 'Název služby je povinný.' }
-  if (payload.price < 0) return { ok: false, error: 'Cena nesmí být záporná.' }
+  if (!Number.isFinite(payload.price) || payload.price < 0) {
+    return { ok: false, error: 'Zadejte platnou cenu.' }
+  }
 
   const supabase = await createClient()
 
