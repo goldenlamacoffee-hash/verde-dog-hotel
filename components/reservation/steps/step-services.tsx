@@ -1,6 +1,6 @@
 'use client'
 
-import { Check } from 'lucide-react'
+import { Check, AlertTriangle } from 'lucide-react'
 import { StepIntro, StepNav } from '../step-nav'
 import { formatPrice, dbUnitLabel } from '@/lib/format'
 import type { ReservationDraft } from '@/lib/reservation'
@@ -8,13 +8,39 @@ import type { ReservationService } from '@/lib/public-data'
 
 interface Props {
   draft: ReservationDraft
-  services: ReservationService[]
+  /** Services from DB. null = DB unavailable — block progression. */
+  services: ReservationService[] | null
   onChange: (patch: Partial<ReservationDraft>) => void
   onNext: () => void
   onBack: () => void
 }
 
 export function StepServices({ draft, services, onChange, onNext, onBack }: Props) {
+  // Fail-closed: cannot show or price services when DB is unavailable
+  if (services === null) {
+    return (
+      <div>
+        <StepIntro
+          step="Krok 3 z 5"
+          title="Doplňkové služby"
+          description="Základní péče je vždy v ceně. Vyberte nadstandard, který vašemu psovi zpříjemní pobyt."
+        />
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-5 py-4 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
+          <div className="flex flex-col gap-1">
+            <p className="font-semibold text-verde-deep">Služby momentálně nejsou dostupné</p>
+            <p className="text-verde-moss">
+              Nepodařilo se načíst aktuální nabídku služeb. Obnovte stránku nebo nás kontaktujte přímo.
+            </p>
+          </div>
+        </div>
+        <div className="mt-6">
+          <StepNav onBack={onBack} onNext={() => {}} disabledNext />
+        </div>
+      </div>
+    )
+  }
+
   const standard = services.filter((s) => s.standard)
   const optional = services.filter((s) => !s.standard)
 

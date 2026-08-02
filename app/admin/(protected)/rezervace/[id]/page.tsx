@@ -90,7 +90,8 @@ export default async function ReservationDetailPage({ params }: { params: Promis
             <Section title="Doplňkové služby">
               {res.reservation_services.map((s: any) => (
                 <div key={s.id} className="flex justify-between text-sm py-1.5" style={{ borderBottom: '1px solid var(--admin-card-border)' }}>
-                  <span style={{ color: 'var(--admin-text)' }}>{s.service?.title} × {s.quantity}</span>
+                  {/* service_title is the authoritative snapshot; fall back to live JOIN for legacy rows */}
+                  <span style={{ color: 'var(--admin-text)' }}>{s.service_title ?? s.service?.title} × {s.quantity}</span>
                   <span className="tabular-nums" style={{ color: 'var(--admin-text-muted)' }}>
                     {Number(s.total_price).toLocaleString('cs-CZ')} Kč
                   </span>

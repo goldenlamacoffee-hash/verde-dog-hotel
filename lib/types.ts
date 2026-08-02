@@ -189,6 +189,7 @@ export interface ServiceCategoryRow {
   description: string | null
   visible_on_website: boolean
   active: boolean
+  revision: number
 }
 
 /**
@@ -207,11 +208,13 @@ export interface ServiceRow {
   show_on_web: boolean
   sort_order: number
   category_id: number | null
-  // new columns
+  // new columns (phase 1)
   archived_at: string | null
   available_in_reservation: boolean
   internal_note: string | null
   custom_unit_label: string | null
+  // optimistic concurrency (phase 2)
+  revision: number
   // joined
   service_categories: Pick<ServiceCategoryRow, 'id' | 'name' | 'slug'> | null
 }

@@ -250,53 +250,36 @@ export interface ReservationService {
 /**
  * Fetch services available in the reservation flow from the DB.
  * Returns only active, non-archived services with available_in_reservation = true,
- * ordered by sort_order. Falls back to the static content/services.ts list.
+ * ordered by sort_order.
+ *
+ * Returns null on any DB error (fail-closed): the reservation flow must block
+ * progression rather than silently fall back to stale static data.
  */
-export async function getPublicServicesForReservation(): Promise<ReservationService[]> {
+export async function getPublicServicesForReservation(): Promise<ReservationService[] | null> {
   try {
     const { createClient } = await import('@/lib/supabase/server')
     const supabase = await createClient()
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('services')
       .select('id, title, description, price, unit, slug, standard, custom_unit_label')
       .eq('active', true)
       .eq('available_in_reservation', true)
       .is('archived_at', null)
       .order('sort_order')
-    if (data && data.length > 0) {
-      return data.map((s: any): ReservationService => ({
-        id: s.id,
-        slug: s.slug ?? null,
-        title: s.title,
-        description: s.description ?? '',
-        price: Number(s.price),
-        unit: s.unit,
-        custom_unit_label: s.custom_unit_label ?? null,
-        standard: !!s.standard,
-      }))
-    }
+    if (error) return null
+    return (data ?? []).map((s: any): ReservationService => ({
+      id: s.id,
+      slug: s.slug ?? null,
+      title: s.title,
+      description: s.description ?? '',
+      price: Number(s.price),
+      unit: s.unit,
+      custom_unit_label: s.custom_unit_label ?? null,
+      standard: !!s.standard,
+    }))
   } catch {
-    // fall through to static
+    return null
   }
-  // Static fallback — translate ServiceOption shape
-  const { services } = await import('@/content/services')
-  const UNIT_TO_DB: Record<string, string> = {
-    'per-night': 'night',
-    'per-day':   'day',
-    'per-stay':  'stay',
-    'per-walk':  'walk',
-    'one-off':   'item',
-  }
-  return services.map((s) => ({
-    id: s.id,
-    slug: s.id,
-    title: s.title,
-    description: s.description,
-    price: s.price,
-    unit: UNIT_TO_DB[s.unit] ?? 'item',
-    custom_unit_label: null,
-    standard: !!s.standard,
-  }))
 }
 
 export async function getPublicTestimonials(): Promise<Testimonial[]> {

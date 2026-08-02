@@ -36,19 +36,29 @@ interface PricingRuleRow {
   sort_order: number
 }
 
+/** Snapshot of a service at the moment of booking — written to reservation_services. */
+export interface ServiceSnapshot {
+  service_id: string
+  price_at_booking: number
+  service_title: string
+  service_unit: string
+  currency: string
+}
+
 /**
  * Compute the authoritative server-side estimate for a reservation.
  * @param arrival  ISO date string "YYYY-MM-DD"
  * @param departure ISO date string "YYYY-MM-DD"
  * @param dogCount number of dogs (≥ 1)
  * @param selectedServiceIds array of service UUIDs the customer chose
+ * @returns estimate + snapshots array for writing to reservation_services
  */
 export async function computeServerEstimate(
   arrival: string,
   departure: string,
   dogCount: number,
   selectedServiceIds: string[],
-): Promise<Estimate> {
+): Promise<{ estimate: Estimate; snapshots: ServiceSnapshot[] }> {
   const nights = nightsBetween(arrival, departure)
   const dogs = Math.max(1, dogCount)
   const lines: EstimateLine[] = []
@@ -110,6 +120,8 @@ export async function computeServerEstimate(
   }
 
   // ── Add-on services ─────────────────────────────────────────────────────────
+  const snapshots: ServiceSnapshot[] = []
+
   for (const serviceId of selectedServiceIds) {
     const svc = allServices.find((s) => s.id === serviceId)
     if (!svc || svc.standard || svc.price === 0) continue
@@ -130,6 +142,15 @@ export async function computeServerEstimate(
       label: svc.title,
       detail,
       amount: quantity * svc.price,
+    })
+
+    // Collect authoritative snapshot for writing to reservation_services
+    snapshots.push({
+      service_id: svc.id,
+      price_at_booking: svc.price,
+      service_title: svc.title,
+      service_unit: unit,
+      currency: 'CZK',
     })
   }
 
@@ -174,5 +195,8 @@ export async function computeServerEstimate(
   const total = Math.max(0, lines.reduce((sum, l) => sum + l.amount, 0))
   const deposit = Math.round((total * BOOKING_RULES.depositRate) / 10) * 10
 
-  return { nights, dogCount: dogs, lines, total, deposit }
+  return {
+    estimate: { nights, dogCount: dogs, lines, total, deposit },
+    snapshots,
+  }
 }

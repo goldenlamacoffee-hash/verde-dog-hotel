@@ -73,6 +73,7 @@ export async function getReservationById(id: string) {
       ),
       reservation_services(
         id, quantity, unit_price, total_price, notes,
+        service_title, service_unit, price_at_booking, currency,
         service:services(id, title, unit)
       )
     `)
@@ -139,7 +140,7 @@ export async function getAdminServicesCatalogue() {
     .select(`
       id, title, description, price, unit, slug, standard, active,
       show_on_web, sort_order, category_id, archived_at,
-      available_in_reservation, internal_note, custom_unit_label,
+      available_in_reservation, internal_note, custom_unit_label, revision,
       service_categories(id, name, slug)
     `)
     .order('sort_order')
@@ -150,7 +151,7 @@ export async function getAdminServiceCategories() {
   const supabase = await createClient()
   return supabase
     .from('service_categories')
-    .select('id, name, slug, sort_order, description, visible_on_website, active')
+    .select('id, name, slug, sort_order, description, visible_on_website, active, revision')
     .order('sort_order')
 }
 

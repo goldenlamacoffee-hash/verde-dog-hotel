@@ -35,12 +35,12 @@ interface ReservationFlowProps {
   maximumStayNights?: number | null
   /**
    * Services available in the reservation flow, fetched server-side from the DB.
-   * Falls back to the static content/services.ts list when not provided.
+   * null = DB unavailable — StepServices will block progression with an error message.
    */
-  services?: ReservationService[]
+  services: ReservationService[] | null
 }
 
-export function ReservationFlow({ contactEmail, calendarAppearance, maximumStayNights, services = [] }: ReservationFlowProps) {
+export function ReservationFlow({ contactEmail, calendarAppearance, maximumStayNights, services }: ReservationFlowProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   // Track the last-seen `new` token so we only reset once per unique value.

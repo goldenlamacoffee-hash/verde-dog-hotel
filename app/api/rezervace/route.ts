@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { computeServerEstimate } from '@/lib/server-pricing'
 
 // ─── Zod validation schema ─────────────────────────────────────────────────────
 
@@ -56,8 +57,8 @@ const ReservationBodySchema = z.object({
     // server-side RPC capacity engine, not by this static Zod max.
     dogCount:         z.number().int().min(1).max(10),
     dogs:             z.array(DogSchema).min(1).max(10),
-    // Frontend sends slugs (e.g. 'individual-walk') — resolved to UUIDs below
-    selectedServices: z.array(z.string().max(80)).max(20).optional().default([]),
+    // Frontend sends DB UUIDs (service.id). Slugs are no longer used client-side.
+    selectedServices: z.array(z.string().uuid('Neplatný identifikátor služby')).max(20).optional().default([]),
     owner:            OwnerSchema,
     consents:         ConsentsSchema,
   }),
@@ -185,27 +186,42 @@ export async function POST(req: NextRequest) {
       weight_kg:     d.weightKg ? parseFloat(d.weightKg) : null,
     }))
 
-  // Resolve service slugs → UUIDs. The frontend sends slugs matching the
-  // `slug` column in the `services` table; the RPC expects real UUIDs.
+  // 4b. Validate that submitted UUIDs are active, non-archived, in-reservation services
+  // and compute the authoritative server-side estimate + snapshots.
   let serviceIds: string[] = []
+  let serviceSnapshots: import('@/lib/server-pricing').ServiceSnapshot[] = []
+
   if (draft.selectedServices.length > 0) {
-    const supabaseForLookup = createServiceRoleClient()
-    const { data: serviceRows, error: svcErr } = await supabaseForLookup
+    const supabaseForValidation = createServiceRoleClient()
+    const { data: validRows, error: svcErr } = await supabaseForValidation
       .from('services')
-      .select('id, slug')
-      .in('slug', draft.selectedServices)
+      .select('id')
+      .in('id', draft.selectedServices)
       .eq('active', true)
       .is('archived_at', null)
       .eq('available_in_reservation', true)
     if (svcErr) {
-      console.error('[verde] services slug lookup error:', svcErr.message)
+      console.error('[verde] services validation error:', svcErr.message)
       return NextResponse.json({ error: 'Interní chyba serveru.' }, { status: 500 })
     }
-    const slugToId = new Map((serviceRows ?? []).map((r) => [r.slug, r.id]))
-    serviceIds = draft.selectedServices
-      .map((slug) => slugToId.get(slug))
-      .filter((id): id is string => Boolean(id))
+    const validIds = new Set((validRows ?? []).map((r) => r.id))
+    serviceIds = draft.selectedServices.filter((id) => validIds.has(id))
+    if (serviceIds.length !== draft.selectedServices.length) {
+      return NextResponse.json(
+        { error: 'Jedna z vybraných služeb již není dostupná.' },
+        { status: 422 }
+      )
+    }
   }
+
+  // Compute authoritative server-side pricing — ignores all client prices
+  const { estimate: serverEstimate, snapshots } = await computeServerEstimate(
+    draft.arrival,
+    draft.departure,
+    draft.dogCount,
+    serviceIds,
+  )
+  serviceSnapshots = snapshots
 
   // Consents jsonb
   const consentsPayload = {
@@ -298,12 +314,36 @@ export async function POST(req: NextRequest) {
     spots_remaining: number
   }
 
+  // Write snapshot fields (service_title, service_unit, currency) to each
+  // reservation_services row — these are set server-side only, never from
+  // client input, so the historical record is always authoritative.
+  if (serviceSnapshots.length > 0) {
+    const supabaseSnap = createServiceRoleClient()
+    await Promise.all(
+      serviceSnapshots.map((snap) =>
+        supabaseSnap
+          .from('reservation_services')
+          .update({
+            service_title: snap.service_title,
+            service_unit:  snap.service_unit,
+            currency:      snap.currency,
+            // Overwrite price_at_booking with the server-authoritative value
+            price_at_booking: snap.price_at_booking,
+          })
+          .eq('reservation_id', result.reservation_id)
+          .eq('service_id', snap.service_id)
+      )
+    )
+  }
+
   return NextResponse.json(
     {
-      refNumber:     result.ref_number,
-      reservationId: result.reservation_id,
-      totalPrice:    result.total_price,
-      depositAmount: result.deposit_amount,
+      refNumber:      result.ref_number,
+      reservationId:  result.reservation_id,
+      // Return the server-authoritative total, not the RPC's stored value,
+      // so the confirmation screen always shows what the pricing engine computed.
+      totalPrice:     serverEstimate.total,
+      depositAmount:  serverEstimate.deposit,
     },
     { status: 201 }
   )
