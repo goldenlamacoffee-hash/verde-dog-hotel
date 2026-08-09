@@ -9,7 +9,8 @@ export function ReservationCta({ cms }: Props) {
   const { contact } = siteSettings
   const headline    = (cms?.headline    as string) || 'Zajistěte svému psovi místo ve Verde'
   const description = (cms?.description as string) || 'Kapacita je omezená, abychom udrželi individuální přístup. Nezávazně nám napište termín a my se vám ozveme s potvrzením.'
-  const ctaLabel    = (cms?.cta_label   as string) || 'Rezervovat pobyt'
+  const ctaLabel    = (cms?.cta_primary  as string) || (cms?.cta_label as string) || 'Rezervovat pobyt'
+  const ctaSecondary= cms?.cta_secondary as string | undefined
 
   return (
     <section className="bg-background">
@@ -37,7 +38,7 @@ export function ReservationCta({ cms }: Props) {
               className="mt-6 inline-flex items-center gap-2 text-sm text-verde-white/70 transition-colors hover:text-verde-white"
             >
               <Mail className="size-4" aria-hidden="true" />
-              {contact.email}
+              {ctaSecondary ? `${ctaSecondary} — ${contact.email}` : contact.email}
             </a>
           </div>
         </div>

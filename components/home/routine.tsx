@@ -3,10 +3,26 @@ import { routine } from '@/content/home'
 
 interface Props { cms?: Record<string, unknown> }
 
+interface ScheduleItem {
+  time?: string
+  title?: string
+  activity?: string
+  description?: string
+}
+
 export function Routine({ cms }: Props) {
   const eyebrow    = (cms?.eyebrow    as string) || 'Den ve Verde'
-  const title      = (cms?.title      as string) || 'Vyvážený režim od rána do večera'
+  const title      = (cms?.headline   as string) || 'Vyvážený režim od rána do večera'
   const description= (cms?.description as string) || 'Pravidelnost dává psům jistotu. Náš den kombinuje pohyb, péči a dostatek klidu na odpočinek.'
+
+  const cmsSchedule = Array.isArray(cms?.schedule) ? (cms!.schedule as ScheduleItem[]) : null
+  const steps = cmsSchedule && cmsSchedule.length > 0
+    ? cmsSchedule.map((step) => ({
+        time: step.time ?? '',
+        title: step.title ?? step.activity ?? '',
+        description: step.description,
+      }))
+    : routine
 
   return (
     <section className="bg-background">
@@ -20,8 +36,8 @@ export function Routine({ cms }: Props) {
           />
 
           <ol className="relative border-l border-verde-stone/60">
-            {routine.map((step, i) => (
-              <li key={step.time} className="relative pb-9 pl-8 last:pb-0">
+            {steps.map((step, i) => (
+              <li key={`${step.time}-${i}`} className="relative pb-9 pl-8 last:pb-0">
                 <span
                   className="absolute -left-[7px] top-1 size-3.5 rounded-full border-2 border-verde-green bg-background"
                   aria-hidden="true"
@@ -30,9 +46,11 @@ export function Routine({ cms }: Props) {
                 <h3 className="mt-1 font-serif text-xl font-semibold text-verde-deep">
                   {step.title}
                 </h3>
-                <p className="mt-1.5 max-w-lg text-pretty text-sm leading-relaxed text-verde-moss">
-                  {step.description}
-                </p>
+                {step.description && (
+                  <p className="mt-1.5 max-w-lg text-pretty text-sm leading-relaxed text-verde-moss">
+                    {step.description}
+                  </p>
+                )}
               </li>
             ))}
           </ol>
