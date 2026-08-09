@@ -155,7 +155,7 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      <ReservationCta />
+      <ReservationCta cms={sections.cta} />
     </>
   )
 }

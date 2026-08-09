@@ -80,7 +80,7 @@ export default async function CarePage() {
 
       <RequirementsSection cms={sections.requirements} />
 
-      <ReservationCta />
+      <ReservationCta cms={sections.cta} />
     </>
   )
 }
