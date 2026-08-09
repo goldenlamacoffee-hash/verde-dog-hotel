@@ -16,11 +16,10 @@ export interface MediaAsset {
   id: string
   filename: string
   storage_path: string
-  url: string
+  public_url: string
   mime_type: string | null
   size_bytes: number | null
-  alt_text: string | null
-  caption: string | null
+  alt: string | null
   tags: string[] | null
   created_at: string
   uploaded_by: string | null
@@ -59,7 +58,7 @@ const SIGNED_URL_TTL = 3600 // 1 hour for private docs
  */
 export async function uploadMediaAsset(
   file: File,
-  opts?: { altText?: string; caption?: string; tags?: string[] },
+  opts?: { altText?: string; tags?: string[] },
 ): Promise<{ asset: MediaAsset | null; error: string | null }> {
   const supabase = await createClient()
 
@@ -72,28 +71,34 @@ export async function uploadMediaAsset(
     .from(MEDIA_BUCKET)
     .upload(path, arrayBuffer, { contentType: file.type, upsert: false })
 
-  if (storageErr) return { asset: null, error: storageErr.message }
+  if (storageErr) {
+    console.error('[media] storage upload failed', { path, code: storageErr.name, message: storageErr.message })
+    return { asset: null, error: storageErr.message }
+  }
 
   const { data: urlData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path)
   const publicUrl = urlData.publicUrl
 
+  // NOTE: media_assets columns are `public_url` and `alt` (not `url` / `alt_text`).
+  // There is no `caption` column — do not insert one.
   const { data: row, error: dbErr } = await supabase
     .from('media_assets')
     .insert({
       filename:     file.name,
       storage_path: path,
-      url:          publicUrl,
+      public_url:   publicUrl,
       mime_type:    file.type || null,
       size_bytes:   file.size || null,
-      alt_text:     opts?.altText ?? null,
-      caption:      opts?.caption ?? null,
+      alt:          opts?.altText ?? null,
       tags:         opts?.tags ?? [],
     })
     .select()
     .single()
 
   if (dbErr) {
+    // Never leave an orphaned storage object if the DB insert fails.
     await supabase.storage.from(MEDIA_BUCKET).remove([path])
+    console.error('[media] media_assets insert failed', { path, code: dbErr.code, message: dbErr.message })
     return { asset: null, error: dbErr.message }
   }
 
@@ -224,22 +229,25 @@ export async function deleteMediaAsset(
 }
 
 /**
- * Update alt_text, caption and tags for a media asset without re-uploading.
+ * Update alt text and tags for a media asset without re-uploading.
  */
 export async function updateMediaAssetMeta(
   assetId: string,
-  meta: { altText?: string; caption?: string; tags?: string[] },
+  meta: { altText?: string; tags?: string[] },
 ): Promise<{ error: string | null }> {
   const supabase = await createClient()
 
   const { error } = await supabase
     .from('media_assets')
     .update({
-      ...(meta.altText !== undefined && { alt_text: meta.altText }),
-      ...(meta.caption !== undefined && { caption:  meta.caption }),
-      ...(meta.tags    !== undefined && { tags:     meta.tags    }),
+      ...(meta.altText !== undefined && { alt:  meta.altText }),
+      ...(meta.tags    !== undefined && { tags: meta.tags    }),
     })
     .eq('id', assetId)
+
+  if (error) {
+    console.error('[media] media_assets update failed', { assetId, code: error.code, message: error.message })
+  }
 
   return { error: error?.message ?? null }
 }

@@ -115,7 +115,7 @@ function MediaPickerField({
                 total={mediaTotal}
                 page={1}
                 limit={mediaTotal}
-                onSelect={asset => { onChange(asset.url); setPickerOpen(false) }}
+                onSelect={asset => { onChange(asset.public_url); setPickerOpen(false) }}
               />
             </div>
           </div>

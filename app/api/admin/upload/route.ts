@@ -34,21 +34,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 413 })
   }
 
+  const GENERIC_ERROR = 'Obrázek se nepodařilo uložit do knihovny médií. Zkuste to prosím znovu.'
+
   // Replace an existing asset (same storage_path, same DB row)
   const replaceId = formData.get('replace_id') as string | null
   if (replaceId) {
     const { asset, error } = await replaceMediaAsset(replaceId, file)
-    if (error || !asset) return NextResponse.json({ error: error ?? 'Replace failed' }, { status: 500 })
+    if (error || !asset) {
+      console.error('[upload] replace failed', { replaceId, message: error })
+      return NextResponse.json({ error: GENERIC_ERROR }, { status: 500 })
+    }
     return NextResponse.json({ asset }, { status: 200 })
   }
 
+  // `alt_text` is the wire/form field name; it maps to the `alt` column on media_assets.
   const altText = (formData.get('alt_text') as string | null) ?? undefined
-  const caption = (formData.get('caption')  as string | null) ?? undefined
-  const tagsRaw = (formData.get('tags')     as string | null) ?? ''
+  const tagsRaw = (formData.get('tags') as string | null) ?? ''
   const tags    = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : []
 
-  const { asset, error } = await uploadMediaAsset(file, { altText, caption, tags })
-  if (error || !asset) return NextResponse.json({ error: error ?? 'Upload failed' }, { status: 500 })
+  const { asset, error } = await uploadMediaAsset(file, { altText, tags })
+  if (error || !asset) {
+    console.error('[upload] media_assets insert failed', { filename: file.name, message: error })
+    return NextResponse.json({ error: GENERIC_ERROR }, { status: 500 })
+  }
 
   return NextResponse.json({ asset }, { status: 201 })
 }
