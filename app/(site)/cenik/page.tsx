@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Check } from 'lucide-react'
+import { Check, Info } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { SectionHeading } from '@/components/common/section-heading'
 import { ReservationCta } from '@/components/home/reservation-cta'
@@ -8,6 +8,14 @@ import { CtaLink } from '@/components/common/cta-button'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { formatPrice, unitLabel } from '@/lib/format'
 import { getPublicPriceItems, getPublicPageSection } from '@/lib/public-data'
+
+interface PricingNoteCms {
+  [key: string]: unknown
+  deposit_info?: string
+  long_stay_discount?: string
+  multi_dog_discount?: string
+  cancellation_policy?: string
+}
 
 export const metadata: Metadata = {
   title: 'Ceník',
@@ -24,13 +32,20 @@ const included = [
 ]
 
 export default async function PricingPage() {
-  const [priceItems, hero] = await Promise.all([
+  const [priceItems, hero, note] = await Promise.all([
     getPublicPriceItems(),
     getPublicPageSection('cenik', 'hero'),
+    getPublicPageSection<PricingNoteCms>('cenik', 'note'),
   ])
   const [featured, ...rest] = [...priceItems].sort((a, b) =>
     a.featured === b.featured ? 0 : a.featured ? -1 : 1,
   )
+
+  const noteItems = note
+    ? [note.deposit_info, note.long_stay_discount, note.multi_dog_discount, note.cancellation_policy].filter(
+        (item): item is string => Boolean(item),
+      )
+    : []
 
   return (
     <>
@@ -108,6 +123,30 @@ export default async function PricingPage() {
           </div>
         </div>
       </section>
+
+      {noteItems.length > 0 && (
+        <section className="bg-secondary/40 py-16 md:py-20">
+          <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+            <SectionHeading
+              eyebrow="Dobré vědět"
+              title="Podmínky a zvýhodnění"
+              align="center"
+              className="mx-auto max-w-2xl"
+            />
+            <ul className="mt-10 grid gap-4 sm:grid-cols-2">
+              {noteItems.map((item) => (
+                <li
+                  key={item}
+                  className="flex items-start gap-3 rounded-2xl border border-border bg-card p-5 text-sm leading-relaxed text-verde-moss"
+                >
+                  <Info className="mt-0.5 size-4 shrink-0 text-verde-green" aria-hidden="true" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
 
       <ReservationCta />
     </>

@@ -3,19 +3,41 @@ import { Mail, MapPin, Phone } from 'lucide-react'
 import { navigation, siteSettings } from '@/content/site'
 import { Logo } from '@/components/brand/logo'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
-import { getPublicContactSettings } from '@/lib/public-data'
+import { getPublicContactSettings, getPublicPageSection } from '@/lib/public-data'
+
+interface FooterLink { href?: string; label?: string }
+
+interface FooterCms {
+  [key: string]: unknown
+  tagline?: string
+  description?: string
+  links_info?: FooterLink[]
+  links_services?: FooterLink[]
+}
 
 export async function SiteFooter() {
   // Single authoritative source for all contact fields — DB with static fallback
-  const contact = await getPublicContactSettings()
+  const [contact, footerCms] = await Promise.all([
+    getPublicContactSettings(),
+    getPublicPageSection<FooterCms>('global', 'footer'),
+  ])
 
-  const { legalLinks, slogan } = siteSettings
+  const { legalLinks } = siteSettings
+  const slogan    = footerCms?.tagline ?? siteSettings.slogan
+  const tagline   = footerCms?.description ?? `${siteSettings.tagline}. Klidné venkovské zázemí pro vašeho psa`
   const email     = contact.email
   const phone     = contact.phone
   const instagram = contact.instagram
   const facebook  = contact.facebook
   const region    = contact.address
   const openingHours = contact.openingHours ?? siteSettings.contact.openingHours
+
+  const navLinks = footerCms?.links_info?.length
+    ? footerCms.links_info.filter((item): item is Required<FooterLink> => Boolean(item.href && item.label))
+    : navigation
+  const serviceLinks = footerCms?.links_services?.filter(
+    (item): item is Required<FooterLink> => Boolean(item.href && item.label),
+  )
 
   const year = new Date().getFullYear()
 
@@ -33,7 +55,7 @@ export async function SiteFooter() {
           <div className="flex flex-col gap-4">
             <Logo tone="light" imgClassName="h-14 w-auto" />
             <p className="text-sm leading-relaxed text-verde-white/70">
-              {siteSettings.tagline}. Klidné venkovské zázemí pro vašeho psa
+              {tagline}
               {region ? ` v okolí ${region}` : ''}.
             </p>
           </div>
@@ -41,8 +63,8 @@ export async function SiteFooter() {
           <nav aria-label="Navigace v patičce" className="flex flex-col gap-3">
             <h2 className="label-caps text-verde-white/60">Navigace</h2>
             <ul className="flex flex-col gap-2 text-sm">
-              {navigation.map((item) => (
-                <li key={item.href}>
+              {navLinks.map((item) => (
+                <li key={`${item.href}-${item.label}`}>
                   <Link
                     href={item.href}
                     className="text-verde-white/75 transition-colors hover:text-verde-white"
@@ -52,6 +74,23 @@ export async function SiteFooter() {
                 </li>
               ))}
             </ul>
+            {serviceLinks && serviceLinks.length > 0 && (
+              <>
+                <h2 className="mt-4 label-caps text-verde-white/60">Služby</h2>
+                <ul className="flex flex-col gap-2 text-sm">
+                  {serviceLinks.map((item, i) => (
+                    <li key={`${item.href}-${item.label}-${i}`}>
+                      <Link
+                        href={item.href}
+                        className="text-verde-white/75 transition-colors hover:text-verde-white"
+                      >
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </nav>
 
           <div className="flex flex-col gap-3">
