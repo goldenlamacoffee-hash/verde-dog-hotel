@@ -26,10 +26,14 @@ interface Props {
 
 // ─── Image keys that should have a picker instead of raw JSON for known sections
 const IMAGE_KEYS: Record<string, string[]> = {
-  hero:          ['image_url'],
-  intro:         ['image_url'],
-  accommodation: ['card_0_image', 'card_1_image', 'card_2_image'],
+  hero:                 ['image_url'],
+  intro:                ['image_url'],
+  accommodation:        ['card_0_image', 'card_1_image', 'card_2_image'],
+  accommodation_detail: ['card_0_image', 'card_1_image', 'card_2_image'],
 }
+
+// ─── Section keys that get a fully structured Czech form instead of raw JSON ──
+const STRUCTURED_SECTIONS = new Set(['accommodation_detail', 'care_detail'])
 
 const SECTION_LABELS: Record<string, string> = {
   hero:                  'Hero – hlavní banner',
@@ -38,6 +42,7 @@ const SECTION_LABELS: Record<string, string> = {
   accommodation:         'Ubytování',
   accommodation_detail:  'Ubytování – detail',
   care_detail:           'Péče – detail',
+  services_intro:        'Služby – úvod',
   routine:               'Denní program',
   feeding:               'Krmení',
   requirements:          'Co s sebou',
@@ -135,6 +140,233 @@ function MediaPickerField({
   )
 }
 
+// ─── Generic structured-form field primitives ─────────────────────────────────
+function TextField({
+  label, value, onChange, placeholder,
+}: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div className="space-y-1">
+      <label className="block text-xs font-medium" style={{ color: 'var(--admin-text-muted)' }}>{label}</label>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
+      />
+    </div>
+  )
+}
+
+function TextAreaField({
+  label, value, onChange, rows = 3,
+}: { label: string; value: string; onChange: (v: string) => void; rows?: number }) {
+  return (
+    <div className="space-y-1">
+      <label className="block text-xs font-medium" style={{ color: 'var(--admin-text-muted)' }}>{label}</label>
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        rows={rows}
+        className="w-full resize-none rounded-lg px-3 py-2 text-sm outline-none"
+        style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
+      />
+    </div>
+  )
+}
+
+/** Editable list of plain strings (used for `features`) */
+function StringListField({
+  label, items, onChange,
+}: { label: string; items: string[]; onChange: (items: string[]) => void }) {
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-medium" style={{ color: 'var(--admin-text-muted)' }}>{label}</label>
+      <div className="space-y-1.5">
+        {items.map((item, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <input
+              value={item}
+              onChange={e => {
+                const next = [...items]
+                next[idx] = e.target.value
+                onChange(next)
+              }}
+              className="flex-1 rounded-lg px-3 py-1.5 text-sm outline-none"
+              style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
+            />
+            <button
+              type="button"
+              onClick={() => onChange(items.filter((_, i) => i !== idx))}
+              title="Odstranit"
+              className="shrink-0 p-1"
+            >
+              <X className="size-3.5 text-red-400" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange([...items, ''])}
+        className="rounded-lg px-3 py-1.5 text-xs font-medium"
+        style={{ background: 'var(--admin-accent-light)', color: 'var(--admin-accent)', border: '1px dashed var(--admin-card-border)' }}
+      >
+        + Přidat položku
+      </button>
+    </div>
+  )
+}
+
+interface ScheduleItem { time?: string; activity?: string }
+
+/** Editable list of {time, activity} rows (used for `schedule`) */
+function ScheduleListField({
+  label, items, onChange,
+}: { label: string; items: ScheduleItem[]; onChange: (items: ScheduleItem[]) => void }) {
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-medium" style={{ color: 'var(--admin-text-muted)' }}>{label}</label>
+      <div className="space-y-1.5">
+        {items.map((item, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <input
+              value={item.time ?? ''}
+              onChange={e => {
+                const next = [...items]
+                next[idx] = { ...next[idx], time: e.target.value }
+                onChange(next)
+              }}
+              placeholder="08:00"
+              className="w-20 shrink-0 rounded-lg px-2 py-1.5 text-sm outline-none"
+              style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
+            />
+            <input
+              value={item.activity ?? ''}
+              onChange={e => {
+                const next = [...items]
+                next[idx] = { ...next[idx], activity: e.target.value }
+                onChange(next)
+              }}
+              placeholder="Popis aktivity"
+              className="flex-1 rounded-lg px-3 py-1.5 text-sm outline-none"
+              style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)', color: 'var(--admin-text)' }}
+            />
+            <button
+              type="button"
+              onClick={() => onChange(items.filter((_, i) => i !== idx))}
+              title="Odstranit"
+              className="shrink-0 p-1"
+            >
+              <X className="size-3.5 text-red-400" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange([...items, { time: '', activity: '' }])}
+        className="rounded-lg px-3 py-1.5 text-xs font-medium"
+        style={{ background: 'var(--admin-accent-light)', color: 'var(--admin-accent)', border: '1px dashed var(--admin-card-border)' }}
+      >
+        + Přidat bod programu
+      </button>
+    </div>
+  )
+}
+
+// ─── Structured form: accommodation_detail (Ubytování – detail) ──────────────
+function AccommodationDetailForm({
+  content, onChange, mediaAssets, mediaTotal,
+}: {
+  content: Record<string, unknown>
+  onChange: (next: Record<string, unknown>) => void
+  mediaAssets: MediaAsset[]
+  mediaTotal: number
+}) {
+  const set = (key: string, value: unknown) => onChange({ ...content, [key]: value })
+  const features = Array.isArray(content.features) ? (content.features as string[]) : []
+
+  return (
+    <div className="space-y-4">
+      <TextField label="Nadpis nad titulkem (eyebrow)" value={(content.eyebrow as string) ?? ''} onChange={v => set('eyebrow', v)} />
+      <TextField label="Titulek (headline)" value={(content.headline as string) ?? ''} onChange={v => set('headline', v)} />
+      <TextAreaField label="Popis (description)" value={(content.description as string) ?? ''} onChange={v => set('description', v)} />
+      <StringListField label="Vybavení / výhody (features)" items={features} onChange={v => set('features', v)} />
+
+      <div className="space-y-3 pt-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--admin-text-muted)' }}>
+          Karty ubytování
+        </p>
+        {[0, 1, 2].map(idx => (
+          <div key={idx} className="rounded-lg p-3 space-y-3"
+            style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}>
+            <p className="text-xs font-semibold" style={{ color: 'var(--admin-text)' }}>Karta {idx + 1}</p>
+            <MediaPickerField
+              label="Obrázek"
+              fieldKey={`card_${idx}_image`}
+              value={(content[`card_${idx}_image`] as string) ?? ''}
+              mediaAssets={mediaAssets}
+              mediaTotal={mediaTotal}
+              onChange={url => set(`card_${idx}_image`, url || undefined)}
+            />
+            <TextField
+              label="Alternativní text obrázku"
+              value={(content[`card_${idx}_image_alt`] as string) ?? ''}
+              onChange={v => set(`card_${idx}_image_alt`, v)}
+            />
+            <TextField
+              label="Titulek karty"
+              value={(content[`card_${idx}_title`] as string) ?? ''}
+              onChange={v => set(`card_${idx}_title`, v)}
+            />
+            <TextAreaField
+              label="Popis karty"
+              rows={2}
+              value={(content[`card_${idx}_description`] as string) ?? ''}
+              onChange={v => set(`card_${idx}_description`, v)}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <TextField
+                label="Text tlačítka (CTA)"
+                value={(content[`card_${idx}_cta_label`] as string) ?? ''}
+                onChange={v => set(`card_${idx}_cta_label`, v)}
+                placeholder="Zjistit více"
+              />
+              <TextField
+                label="Odkaz tlačítka (CTA)"
+                value={(content[`card_${idx}_cta_href`] as string) ?? ''}
+                onChange={v => set(`card_${idx}_cta_href`, v)}
+                placeholder="/pece-a-ubytovani"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Structured form: care_detail (Péče – detail) ─────────────────────────────
+function CareDetailForm({
+  content, onChange,
+}: {
+  content: Record<string, unknown>
+  onChange: (next: Record<string, unknown>) => void
+}) {
+  const set = (key: string, value: unknown) => onChange({ ...content, [key]: value })
+  const schedule = Array.isArray(content.schedule) ? (content.schedule as ScheduleItem[]) : []
+
+  return (
+    <div className="space-y-4">
+      <TextField label="Nadpis nad titulkem (eyebrow)" value={(content.eyebrow as string) ?? ''} onChange={v => set('eyebrow', v)} />
+      <TextField label="Titulek (headline)" value={(content.headline as string) ?? ''} onChange={v => set('headline', v)} />
+      <TextAreaField label="Popis (description)" value={(content.description as string) ?? ''} onChange={v => set('description', v)} />
+      <ScheduleListField label="Denní program (schedule)" items={schedule} onChange={v => set('schedule', v)} />
+    </div>
+  )
+}
+
 // ─── SectionCard ──────────────────────────────────────────────────────────────
 function SectionCard({
   section,
@@ -154,11 +386,18 @@ function SectionCard({
   const [active, setActive] = useState(section.active)
   const [pending, startTransition] = useTransition()
   const [saved, setSaved] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const imageKeys = IMAGE_KEYS[section.section_key] ?? []
+  const isStructured = STRUCTURED_SECTIONS.has(section.section_key)
 
   function updateImageKey(key: string, url: string) {
     const next = { ...content, [key]: url || undefined }
+    setContent(next)
+    setRawJson(JSON.stringify(next, null, 2))
+  }
+
+  function updateStructuredContent(next: Record<string, unknown>) {
     setContent(next)
     setRawJson(JSON.stringify(next, null, 2))
   }
@@ -244,8 +483,21 @@ function SectionCard({
             Zobrazit sekci na webu
           </label>
 
-          {/* Image pickers for known image keys */}
-          {imageKeys.length > 0 && (
+          {/* Structured Czech form for known sections */}
+          {section.section_key === 'accommodation_detail' && (
+            <AccommodationDetailForm
+              content={content}
+              onChange={updateStructuredContent}
+              mediaAssets={mediaAssets}
+              mediaTotal={mediaTotal}
+            />
+          )}
+          {section.section_key === 'care_detail' && (
+            <CareDetailForm content={content} onChange={updateStructuredContent} />
+          )}
+
+          {/* Image pickers for known image keys — only shown when there is no structured form for this section */}
+          {!isStructured && imageKeys.length > 0 && (
             <div className="rounded-lg p-3 space-y-3"
               style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--admin-text-muted)' }}>
@@ -265,26 +517,59 @@ function SectionCard({
             </div>
           )}
 
-          <div>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider"
-              style={{ color: 'var(--admin-text-muted)' }}>
-              Obsah (JSON)
-            </label>
-            <textarea
-              value={rawJson}
-              onChange={e => handleJsonChange(e.target.value)}
-              rows={14}
-              spellCheck={false}
-              className="w-full rounded-lg border px-3 py-2 font-mono text-xs leading-relaxed"
-              style={{
-                background:   'var(--admin-card)',
-                borderColor:  jsonError ? '#dc2626' : 'var(--admin-card-border)',
-                color:        'var(--admin-text)',
-                resize:       'vertical',
-              }}
-            />
-            {jsonError && <p className="mt-1 text-xs text-red-600">{jsonError}</p>}
-          </div>
+          {/* Raw JSON — always visible for non-structured sections; collapsible "Pokročilé" for structured ones */}
+          {isStructured ? (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(a => !a)}
+                className="flex items-center gap-1.5 text-xs font-medium"
+                style={{ color: 'var(--admin-text-muted)' }}
+              >
+                {showAdvanced ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                Pokročilé (JSON)
+              </button>
+              {showAdvanced && (
+                <div className="mt-2">
+                  <textarea
+                    value={rawJson}
+                    onChange={e => handleJsonChange(e.target.value)}
+                    rows={14}
+                    spellCheck={false}
+                    className="w-full rounded-lg border px-3 py-2 font-mono text-xs leading-relaxed"
+                    style={{
+                      background:   'var(--admin-card)',
+                      borderColor:  jsonError ? '#dc2626' : 'var(--admin-card-border)',
+                      color:        'var(--admin-text)',
+                      resize:       'vertical',
+                    }}
+                  />
+                  {jsonError && <p className="mt-1 text-xs text-red-600">{jsonError}</p>}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wider"
+                style={{ color: 'var(--admin-text-muted)' }}>
+                Obsah (JSON)
+              </label>
+              <textarea
+                value={rawJson}
+                onChange={e => handleJsonChange(e.target.value)}
+                rows={14}
+                spellCheck={false}
+                className="w-full rounded-lg border px-3 py-2 font-mono text-xs leading-relaxed"
+                style={{
+                  background:   'var(--admin-card)',
+                  borderColor:  jsonError ? '#dc2626' : 'var(--admin-card-border)',
+                  color:        'var(--admin-text)',
+                  resize:       'vertical',
+                }}
+              />
+              {jsonError && <p className="mt-1 text-xs text-red-600">{jsonError}</p>}
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <button type="button" onClick={handleSave} disabled={pending}
