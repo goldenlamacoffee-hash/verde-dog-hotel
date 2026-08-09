@@ -5,6 +5,13 @@ import { CopyAddressButton } from '@/components/contact/copy-address-button'
 import { isValidGoogleMapsUrl } from '@/lib/validate-url'
 import type { ContactSettingsValue } from '@/lib/types'
 
+interface LocationCms {
+  headline?: string
+  address_note?: string
+  parking?: string
+  public_transport?: string
+}
+
 interface Props {
   location: Pick<
     ContactSettingsValue,
@@ -19,6 +26,7 @@ interface Props {
     | 'locationImageUrl'
     | 'locationImageAlt'
   >
+  cms?: LocationCms
 }
 
 /**
@@ -32,7 +40,7 @@ interface Props {
  * is actually configured — image, address lines and the Maps CTA are all
  * independently optional.
  */
-export function ContactLocation({ location }: Props) {
+export function ContactLocation({ location, cms }: Props) {
   const {
     locationTitle,
     locationDescription,
@@ -52,7 +60,11 @@ export function ContactLocation({ location }: Props) {
   // written outside the admin action (e.g. directly in the DB).
   const hasMapsLink = Boolean(googleMapsUrl && isValidGoogleMapsUrl(googleMapsUrl))
 
-  if (!hasAddress && !hasImage && !hasMapsLink && !locationDescription) {
+  const practicalInfo = [cms?.address_note, cms?.parking, cms?.public_transport].filter(
+    (item): item is string => Boolean(item),
+  )
+
+  if (!hasAddress && !hasImage && !hasMapsLink && !locationDescription && practicalInfo.length === 0) {
     return null
   }
 
@@ -82,7 +94,11 @@ export function ContactLocation({ location }: Props) {
           )}
 
           <div className="flex flex-col justify-center gap-6 p-8 sm:p-10 lg:p-14">
-            <SectionHeading eyebrow="Lokalita" title={locationTitle || 'Kde nás najdete'} withSprig />
+            <SectionHeading
+              eyebrow="Lokalita"
+              title={cms?.headline || locationTitle || 'Kde nás najdete'}
+              withSprig
+            />
 
             {hasAddress && (
               <address className="not-italic text-base leading-relaxed text-verde-deep">
@@ -100,6 +116,17 @@ export function ContactLocation({ location }: Props) {
               <p className="max-w-md text-pretty text-sm leading-relaxed text-verde-moss">
                 {locationDescription}
               </p>
+            )}
+
+            {practicalInfo.length > 0 && (
+              <ul className="flex flex-col gap-2">
+                {practicalInfo.map((item) => (
+                  <li key={item} className="flex items-start gap-2 text-sm leading-relaxed text-verde-moss">
+                    <MapPin className="mt-0.5 size-3.5 shrink-0 text-verde-green" aria-hidden="true" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
             )}
 
             {(hasMapsLink || hasAddress) && (

@@ -14,9 +14,18 @@ export const metadata: Metadata = {
     'Kontaktujte psí hotel VERDE — telefon, e-mail a lokalita Brno-venkov. Napište nám a rádi vám poradíme s pobytem vašeho psa.',
 }
 
+interface LocationCms {
+  [key: string]: unknown
+  headline?: string
+  address_note?: string
+  parking?: string
+  public_transport?: string
+}
+
 export default async function ContactPage() {
-  const [hero, contact] = await Promise.all([
+  const [hero, location, contact] = await Promise.all([
     getPublicPageSection('kontakt', 'hero'),
+    getPublicPageSection<LocationCms>('kontakt', 'location'),
     getPublicContactSettings(),
   ])
 
@@ -120,6 +129,7 @@ export default async function ContactPage() {
           locationImageUrl: contact.locationImageUrl,
           locationImageAlt: contact.locationImageAlt,
         }}
+        cms={location ?? undefined}
       />
     </>
   )

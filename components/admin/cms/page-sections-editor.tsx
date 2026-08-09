@@ -37,6 +37,13 @@ const SECTION_LABELS: Record<string, string> = {
   pillars:       'Pilíře – proč Verde',
   accommodation: 'Ubytování',
   routine:       'Denní program',
+  feeding:       'Krmení',
+  requirements:  'Co s sebou',
+  story:         'Náš příběh',
+  team:          'Náš tým',
+  values:        'Hodnoty',
+  location:      'Lokalita',
+  note:          'Poznámky k ceníku',
   cta:           'CTA – výzva k akci',
   footer:        'Patička (globální)',
 }
