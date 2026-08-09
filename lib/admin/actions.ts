@@ -318,7 +318,17 @@ export async function upsertPageSection(data: {
 
   if (error) throw new Error(error.message)
   revalidatePath('/admin/obsah')
-  revalidatePath('/')
+
+  // `global` sections (header/footer) render inside the root layout on every
+  // page, so revalidate the whole layout rather than a single route.
+  // Every other page key maps 1:1 to its route segment (`home` -> `/`).
+  if (data.page === 'global') {
+    revalidatePath('/', 'layout')
+  } else if (data.page === 'home') {
+    revalidatePath('/')
+  } else {
+    revalidatePath(`/${data.page}`)
+  }
 }
 
 // ─── Pricing rules ────────────────────────────────────────────────────────────
