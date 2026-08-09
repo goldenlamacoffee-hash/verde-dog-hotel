@@ -73,7 +73,12 @@ export interface Testimonial {
 export interface GalleryImage {
   src: string
   alt: string
-  category: 'hotel' | 'exterier' | 'psi' | 'pece'
+  /**
+   * Static content uses the fixed set below; CMS-managed items (from the
+   * `gallery_items` table) use admin-defined free-text categories instead,
+   * so this is widened to `string` to accommodate both.
+   */
+  category: 'hotel' | 'exterier' | 'psi' | 'pece' | string
   width: number
   height: number
 }

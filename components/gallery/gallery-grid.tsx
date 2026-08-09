@@ -4,24 +4,35 @@ import { useState } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { galleryCategories, galleryImages } from '@/content/gallery'
+import { galleryCategories as staticCategories, galleryImages as staticImages } from '@/content/gallery'
 import type { GalleryImage } from '@/lib/types'
 
-type Filter = GalleryImage['category'] | 'vse'
+type Filter = string
 
-export function GalleryGrid() {
-  const [filter, setFilter] = useState<Filter>('vse')
+interface GalleryGridProps {
+  /** Admin-managed photos from the CMS. Falls back to static content when omitted/empty. */
+  images?: GalleryImage[]
+  /** Filter tabs matching `images`. Falls back to the static category list when omitted. */
+  categories?: { id: string; label: string }[]
+}
+
+export function GalleryGrid({ images, categories }: GalleryGridProps) {
+  const hasCmsImages = !!images && images.length > 0
+  const allImages = hasCmsImages ? images : staticImages
+  const filterTabs = hasCmsImages && categories ? categories : staticCategories
+
+  const [filter, setFilter] = useState<Filter>(filterTabs[0]?.id ?? 'vse')
   const [active, setActive] = useState<GalleryImage | null>(null)
 
   const visible =
-    filter === 'vse'
-      ? galleryImages
-      : galleryImages.filter((img) => img.category === filter)
+    filter === filterTabs[0]?.id
+      ? allImages
+      : allImages.filter((img) => img.category === filter)
 
   return (
     <div>
       <div className="flex flex-wrap justify-center gap-2" role="tablist" aria-label="Filtr galerie">
-        {galleryCategories.map((cat) => {
+        {filterTabs.map((cat) => {
           const selected = filter === cat.id
           return (
             <button
