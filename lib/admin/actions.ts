@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { isValidGoogleMapsUrl } from '@/lib/validate-url'
 
 // ─── Reservations ─────────────────────────────────────────────────────────────
 
@@ -81,11 +82,20 @@ export async function upsertService(data: {
 // ─── CMS ──────────────────────────────────────────────────────────────────────
 
 export async function updateSiteSetting(key: string, value: object) {
+  // Server-side validation for admin-supplied Google Maps link on the
+  // Contact page location block. Never trust the client to have validated this.
+  if (key === 'contact') {
+    const mapsUrl = (value as Record<string, unknown>).googleMapsUrl
+    if (typeof mapsUrl === 'string' && mapsUrl.trim() !== '' && !isValidGoogleMapsUrl(mapsUrl)) {
+      throw new Error('Zadejte platný odkaz na Google Maps.')
+    }
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { error } = await supabase
-    .from('site_settings')
-    .upsert({ key, value, updated_at: new Date().toISOString(), updated_by: user?.id })
+  .from('site_settings')
+  .upsert({ key, value, updated_at: new Date().toISOString(), updated_by: user?.id })
   if (error) throw new Error(error.message)
 
   // Always revalidate the admin page and global layout (covers footer on all pages)

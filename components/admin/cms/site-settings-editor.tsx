@@ -2,8 +2,10 @@
 
 import { useState, useTransition, useRef } from 'react'
 import Image from 'next/image'
-import { Image as ImageIcon, Plus, Trash2, X } from 'lucide-react'
+import { Image as ImageIcon, Plus, Trash2, X, MapPin } from 'lucide-react'
 import { updateSiteSetting } from '@/lib/admin/actions'
+import { MediaPickerModal } from '@/components/admin/media/media-picker-modal'
+import type { MediaAsset } from '@/components/admin/media/media-library'
 import type { ContactSettingsValue } from '@/lib/types'
 
 interface Props {
@@ -15,25 +17,42 @@ interface Props {
 
 export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity, initialBrand }: Props) {
   const [contact,  setContact]  = useState<ContactSettingsValue>({
-    phone:        (initialContact?.phone        as string)  ?? '',
-    email:        (initialContact?.email        as string)  ?? '',
-    address:      (initialContact?.address      as string)  ?? '',
-    web:          (initialContact?.web          as string)  ?? '',
-    facebook:     (initialContact?.facebook     as string)  ?? '',
-    instagram:    (initialContact?.instagram    as string)  ?? '',
-    openingHours: (initialContact?.openingHours as ContactSettingsValue['openingHours']) ?? [],
+    phone:               (initialContact?.phone               as string)  ?? '',
+    email:               (initialContact?.email               as string)  ?? '',
+    address:             (initialContact?.address             as string)  ?? '',
+    web:                 (initialContact?.web                 as string)  ?? '',
+    facebook:            (initialContact?.facebook             as string)  ?? '',
+    instagram:           (initialContact?.instagram            as string)  ?? '',
+    openingHours:        (initialContact?.openingHours as ContactSettingsValue['openingHours']) ?? [],
+    locationTitle:       (initialContact?.locationTitle        as string)  ?? '',
+    locationDescription: (initialContact?.locationDescription  as string)  ?? '',
+    addressLine1:        (initialContact?.addressLine1         as string)  ?? '',
+    addressLine2:        (initialContact?.addressLine2         as string)  ?? '',
+    city:                (initialContact?.city                 as string)  ?? '',
+    postcode:            (initialContact?.postcode              as string)  ?? '',
+    country:             (initialContact?.country               as string)  ?? '',
+    googleMapsUrl:       (initialContact?.googleMapsUrl         as string)  ?? '',
+    locationImageUrl:    (initialContact?.locationImageUrl      as string)  ?? '',
+    locationImageAlt:    (initialContact?.locationImageAlt      as string)  ?? '',
   })
   const [seo,      setSeo]      = useState<Record<string, string>>((initialSeo as Record<string, string>) ?? {})
   const [capacity, setCapacity] = useState<Record<string, unknown>>(initialCapacity ?? {})
   const [brand,    setBrand]    = useState<Record<string, string>>((initialBrand as Record<string, string>) ?? {})
   const [isPending, startTransition] = useTransition()
   const [saved, setSaved] = useState<string | null>(null)
+  const [saveErrors, setSaveErrors] = useState<Record<string, string>>({})
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   function save(key: string, value: object) {
+    setSaveErrors(prev => { const next = { ...prev }; delete next[key]; return next })
     startTransition(async () => {
-      await updateSiteSetting(key, value)
-      setSaved(key)
-      setTimeout(() => setSaved(null), 2500)
+      try {
+        await updateSiteSetting(key, value)
+        setSaved(key)
+        setTimeout(() => setSaved(null), 2500)
+      } catch (err) {
+        setSaveErrors(prev => ({ ...prev, [key]: err instanceof Error ? err.message : 'Uložení se nezdařilo.' }))
+      }
     })
   }
 
@@ -118,7 +137,168 @@ export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity
           </div>
         </Field>
 
-        <SaveButton label="Uložit kontakt" saved={saved === 'contact'} isPending={isPending} onClick={() => save('contact', contact)} />
+        <SaveButton
+          label="Uložit kontakt"
+          saved={saved === 'contact'}
+          isPending={isPending}
+          error={saveErrors.contact}
+          onClick={() => save('contact', contact)}
+        />
+      </Section>
+
+      {/* Location — Contact page "Kde nás najdete" block */}
+      <Section title="Lokace">
+        <p className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+          Statická sekce s fotografií a odkazem na Google Maps na stránce Kontakt.
+          Bez interaktivní mapy — pouze fotografie a odkaz.
+        </p>
+
+        <Field label="Nadpis sekce (volitelné)">
+          <input
+            value={contact.locationTitle ?? ''}
+            onChange={e => setContact(p => ({ ...p, locationTitle: e.target.value }))}
+            placeholder="Kde nás najdete"
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Krátký popis (volitelné)">
+          <textarea
+            value={contact.locationDescription ?? ''}
+            onChange={e => setContact(p => ({ ...p, locationDescription: e.target.value }))}
+            placeholder="VERDE se nachází v klidném prostředí s pohodlným příjezdem autem."
+            rows={2}
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none resize-none"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Adresa">
+          <input
+            value={contact.addressLine1 ?? ''}
+            onChange={e => setContact(p => ({ ...p, addressLine1: e.target.value }))}
+            placeholder="VERDE Hotel pro psy, Ulice 123"
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+            style={inputStyle}
+          />
+        </Field>
+        <Field label="Adresa — řádek 2 (volitelné)">
+          <input
+            value={contact.addressLine2 ?? ''}
+            onChange={e => setContact(p => ({ ...p, addressLine2: e.target.value }))}
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+            style={inputStyle}
+          />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Město">
+            <input
+              value={contact.city ?? ''}
+              onChange={e => setContact(p => ({ ...p, city: e.target.value }))}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="PSČ">
+            <input
+              value={contact.postcode ?? ''}
+              onChange={e => setContact(p => ({ ...p, postcode: e.target.value }))}
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={inputStyle}
+            />
+          </Field>
+        </div>
+
+        <Field label="Země">
+          <input
+            value={contact.country ?? ''}
+            onChange={e => setContact(p => ({ ...p, country: e.target.value }))}
+            placeholder="Česká republika"
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Google Maps odkaz">
+          <input
+            value={contact.googleMapsUrl ?? ''}
+            onChange={e => setContact(p => ({ ...p, googleMapsUrl: e.target.value }))}
+            placeholder="https://maps.app.goo.gl/…"
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+            style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }}
+          />
+          <p className="text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+            Vložte přesný odkaz z Google Maps (tlačítko &quot;Sdílet&quot;). Musí to být platná
+            adresa google.com/maps, maps.google.com nebo maps.app.goo.gl.
+          </p>
+        </Field>
+
+        <Field label="Fotografie lokace">
+          <div className="flex items-center gap-3">
+            {contact.locationImageUrl ? (
+              <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-lg" style={{ background: 'var(--admin-bg)' }}>
+                <Image
+                  src={contact.locationImageUrl}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  unoptimized={contact.locationImageUrl.startsWith('http')}
+                />
+              </div>
+            ) : (
+              <div
+                className="flex h-20 w-32 shrink-0 items-center justify-center rounded-lg"
+                style={{ background: 'var(--admin-bg)', border: '1px dashed var(--admin-card-border)' }}
+              >
+                <MapPin className="size-5" style={{ color: 'var(--admin-text-muted)' }} />
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setShowLocationPicker(true)}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs"
+                style={{ background: 'var(--admin-accent-light)', color: 'var(--admin-accent)', border: '1px solid var(--admin-card-border)' }}
+              >
+                <ImageIcon className="size-3.5" />
+                Vybrat z médií
+              </button>
+              {contact.locationImageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setContact(p => ({ ...p, locationImageUrl: '', locationImageAlt: '' }))}
+                  className="flex items-center gap-1.5 text-xs"
+                  style={{ color: 'var(--admin-text-muted)' }}
+                >
+                  <X className="size-3.5" />
+                  Odebrat fotografii
+                </button>
+              )}
+            </div>
+          </div>
+        </Field>
+
+        {contact.locationImageUrl && (
+          <Field label="Alternativní text fotografie">
+            <input
+              value={contact.locationImageAlt ?? ''}
+              onChange={e => setContact(p => ({ ...p, locationImageAlt: e.target.value }))}
+              placeholder="Pohled na VERDE Hotel pro psy a okolní přírodu"
+              className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+              style={inputStyle}
+            />
+          </Field>
+        )}
+
+        <SaveButton
+          label="Uložit lokaci"
+          saved={saved === 'contact'}
+          isPending={isPending}
+          error={saveErrors.contact}
+          onClick={() => save('contact', contact)}
+        />
       </Section>
 
       {/* SEO */}
@@ -179,6 +359,18 @@ export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity
         ))}
         <SaveButton label="Uložit brand" saved={saved === 'brand'} isPending={isPending} onClick={() => save('brand', brand)} />
       </Section>
+
+      <MediaPickerModal
+        open={showLocationPicker}
+        onClose={() => setShowLocationPicker(false)}
+        onSelect={(asset: MediaAsset) => {
+          setContact(p => ({
+            ...p,
+            locationImageUrl: asset.url,
+            locationImageAlt: p.locationImageAlt || asset.alt_text || '',
+          }))
+        }}
+      />
     </div>
   )
 }
@@ -270,18 +462,23 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function SaveButton({ label, saved, isPending, onClick }: { label: string; saved: boolean; isPending: boolean; onClick: () => void }) {
+function SaveButton({
+  label, saved, isPending, onClick, error,
+}: { label: string; saved: boolean; isPending: boolean; onClick: () => void; error?: string }) {
   return (
-    <div className="flex items-center gap-3 pt-2">
-      <button
-        onClick={onClick}
-        disabled={isPending}
-        className="rounded-lg px-5 py-2 text-sm font-semibold disabled:opacity-60"
-        style={{ background: 'var(--admin-accent)', color: '#fff' }}
-      >
-        {isPending ? 'Ukládám…' : label}
-      </button>
-      {saved && <span className="text-xs" style={{ color: 'var(--admin-success)' }}>Uloženo.</span>}
+    <div className="flex flex-col gap-1.5 pt-2">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onClick}
+          disabled={isPending}
+          className="rounded-lg px-5 py-2 text-sm font-semibold disabled:opacity-60"
+          style={{ background: 'var(--admin-accent)', color: '#fff' }}
+        >
+          {isPending ? 'Ukládám…' : label}
+        </button>
+        {saved && <span className="text-xs" style={{ color: 'var(--admin-success)' }}>Uloženo.</span>}
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
     </div>
   )
 }
