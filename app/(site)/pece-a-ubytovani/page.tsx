@@ -3,11 +3,12 @@ import { PageHeader } from '@/components/common/page-header'
 import { SectionHeading } from '@/components/common/section-heading'
 import { Accommodation } from '@/components/home/accommodation'
 import { Routine } from '@/components/home/routine'
+import { FeedingSection } from '@/components/care/feeding-section'
+import { RequirementsSection } from '@/components/care/requirements-section'
 import { ReservationCta } from '@/components/home/reservation-cta'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
-import { services } from '@/content/services'
 import { formatPrice, unitLabel } from '@/lib/format'
-import { getPublicPageSection } from '@/lib/public-data'
+import { getPublicPageSections, getPublicPriceItems } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'Péče a ubytování',
@@ -16,7 +17,11 @@ export const metadata: Metadata = {
 }
 
 export default async function CarePage() {
-  const hero = await getPublicPageSection('pece-a-ubytovani', 'hero')
+  const [sections, priceItems] = await Promise.all([
+    getPublicPageSections('pece-a-ubytovani'),
+    getPublicPriceItems(),
+  ])
+  const hero = sections.hero
 
   return (
     <>
@@ -26,9 +31,11 @@ export default async function CarePage() {
         description={(hero?.description as string) ?? 'Od komfortního zázemí přes vyvážený denní režim až po doplňkové služby. Vše přizpůsobíme povaze a zvyklostem vašeho psa.'}
       />
 
-      <Accommodation />
+      <Accommodation cms={sections.accommodation_detail} />
 
-      <Routine />
+      <Routine cms={sections.care_detail} />
+
+      <FeedingSection cms={sections.feeding} />
 
       <section className="bg-secondary/40 py-16 md:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -42,7 +49,7 @@ export default async function CarePage() {
           />
 
           <div className="mt-14 grid gap-6 md:grid-cols-2">
-            {services.map((service) => (
+            {priceItems.map((service) => (
               <article
                 key={service.id}
                 className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-7"
@@ -55,7 +62,7 @@ export default async function CarePage() {
                     </h3>
                   </div>
                   <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-sm font-semibold text-verde-green">
-                    {service.standard
+                    {service.featured
                       ? 'V ceně'
                       : service.price === 0
                         ? 'Zdarma'
@@ -71,7 +78,9 @@ export default async function CarePage() {
         </div>
       </section>
 
-      <ReservationCta />
+      <RequirementsSection cms={sections.requirements} />
+
+      <ReservationCta cms={sections.cta} />
     </>
   )
 }

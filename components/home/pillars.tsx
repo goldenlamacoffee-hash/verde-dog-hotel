@@ -6,10 +6,16 @@ interface Props { cms?: Record<string, unknown> }
 export function Pillars({ cms }: Props) {
   // cms.items can override the static pillars array with {icon, title, description}[]
   const items = (Array.isArray(cms?.items) ? cms.items as typeof staticPillars : null) ?? staticPillars
+  const headline = cms?.headline as string | undefined
 
   return (
     <section className="bg-primary text-primary-foreground" aria-label="Naše hodnoty">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 md:py-16 lg:px-8">
+        {headline && (
+          <h2 className="mb-10 text-balance text-center font-serif text-2xl font-semibold text-verde-white sm:text-3xl">
+            {headline}
+          </h2>
+        )}
         <ul className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-5">
           {items.map((pillar, i) => (
             <li

@@ -32,13 +32,23 @@ const IMAGE_KEYS: Record<string, string[]> = {
 }
 
 const SECTION_LABELS: Record<string, string> = {
-  hero:          'Hero – hlavní banner',
-  intro:         'Intro – představení',
-  pillars:       'Pilíře – proč Verde',
-  accommodation: 'Ubytování',
-  routine:       'Denní program',
-  cta:           'CTA – výzva k akci',
-  footer:        'Patička (globální)',
+  hero:                  'Hero – hlavní banner',
+  intro:                 'Intro – představení',
+  pillars:               'Pilíře – proč Verde',
+  accommodation:         'Ubytování',
+  accommodation_detail:  'Ubytování – detail',
+  care_detail:           'Péče – detail',
+  routine:               'Denní program',
+  feeding:               'Krmení',
+  requirements:          'Co s sebou',
+  story:                 'Náš příběh',
+  team:                  'Náš tým',
+  values:                'Hodnoty',
+  location:              'Lokalita',
+  note:                  'Poznámky k ceníku',
+  cta:                   'CTA – výzva k akci',
+  footer:                'Patička (globální)',
+  header:                'Hlavička (globální)',
 }
 
 // ─── Inline MediaPicker field ─────────────────────────────────────────────────

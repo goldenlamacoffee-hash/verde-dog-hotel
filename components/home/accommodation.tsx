@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, Check } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
 import { accommodationCards } from '@/content/home'
 
@@ -8,8 +8,9 @@ interface Props { cms?: Record<string, unknown> }
 
 export function Accommodation({ cms }: Props) {
   const eyebrow    = (cms?.eyebrow    as string) || 'Zázemí a péče'
-  const title      = (cms?.title      as string) || 'Prostředí, kde se pes cítí bezpečně'
+  const title      = (cms?.headline   as string) || 'Prostředí, kde se pes cítí bezpečně'
   const description= (cms?.description as string) || 'Spojujeme pohodlné vnitřní zázemí s bezpečným venkovním prostorem v přírodě.'
+  const features    = Array.isArray(cms?.features) ? (cms!.features as string[]) : null
 
   return (
     <section className="bg-secondary paper-texture">
@@ -22,6 +23,17 @@ export function Accommodation({ cms }: Props) {
           description={description}
           className="mx-auto max-w-2xl"
         />
+
+        {features && features.length > 0 && (
+          <ul className="mx-auto mt-10 grid max-w-3xl gap-3 sm:grid-cols-2">
+            {features.map((feature) => (
+              <li key={feature} className="flex items-start gap-2.5 text-sm leading-relaxed text-verde-moss">
+                <Check className="mt-0.5 size-4 shrink-0 text-verde-green" aria-hidden="true" />
+                <span>{feature}</span>
+              </li>
+            ))}
+          </ul>
+        )}
 
         <div className="mt-14 grid gap-6 md:grid-cols-3">
           {accommodationCards.map((card, idx) => {

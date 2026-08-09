@@ -3,7 +3,7 @@
  * All functions are safe to call from Server Components.
  */
 
-import type { CalendarAppearance, ContactSettingsValue, FaqItem, PriceItem, Testimonial } from '@/lib/types'
+import type { CalendarAppearance, ContactSettingsValue, FaqItem, GalleryImage, PriceItem, Testimonial } from '@/lib/types'
 import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
 import { faqItems as staticFaq } from '@/content/faq'
 import { priceItems as staticPrices } from '@/content/services'
@@ -293,6 +293,40 @@ export async function getPublicServicesForReservation(): Promise<ReservationServ
   } catch {
     return null
   }
+}
+
+// ─── Gallery ───────────────────────────────────────────────────────────────
+
+/**
+ * Fetch admin-managed gallery photos from `gallery_items`.
+ *
+ * Returns null when the table has no active rows (or is unreachable) so
+ * callers can fall back to the static category list in content/gallery.ts
+ * as well — the CMS categories are free text and don't line up with the
+ * static ones, so images and categories must be swapped together.
+ */
+export async function getPublicGalleryImages(): Promise<GalleryImage[] | null> {
+  try {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('gallery_items')
+      .select('title, alt, src, category')
+      .eq('active', true)
+      .order('sort_order')
+    if (data && data.length > 0) {
+      return data.map((item: any): GalleryImage => ({
+        src: item.src,
+        alt: item.alt || item.title || '',
+        category: item.category,
+        width: 1200,
+        height: 900,
+      }))
+    }
+  } catch {
+    // fall through
+  }
+  return null
 }
 
 export async function getPublicTestimonials(): Promise<Testimonial[]> {
