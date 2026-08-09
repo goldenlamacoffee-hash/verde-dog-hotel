@@ -366,8 +366,8 @@ export function SiteSettingsEditor({ initialContact, initialSeo, initialCapacity
         onSelect={(asset: MediaAsset) => {
           setContact(p => ({
             ...p,
-            locationImageUrl: asset.url,
-            locationImageAlt: p.locationImageAlt || asset.alt_text || '',
+            locationImageUrl: asset.public_url,
+            locationImageAlt: p.locationImageAlt || asset.alt || '',
           }))
         }}
       />
@@ -401,7 +401,7 @@ function BrandImageField({
     const json = await res.json()
     setUploading(false)
     if (!res.ok || !json.asset) { setUploadErr(json.error ?? 'Chyba'); return }
-    onChange(json.asset.url as string)
+    onChange(json.asset.public_url as string)
   }
 
   return (

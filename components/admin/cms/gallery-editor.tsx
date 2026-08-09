@@ -84,8 +84,8 @@ export function GalleryEditor({ initialItems }: { initialItems: GalleryItem[] })
   function handlePickerSelect(asset: MediaAsset) {
     setEditing(prev => ({
       ...prev,
-      src: asset.url,
-      alt: prev?.alt || asset.alt_text || '',
+      src: asset.public_url,
+      alt: prev?.alt || asset.alt || '',
       title: prev?.title || asset.filename.replace(/\.[^/.]+$/, '') || '',
     }))
   }

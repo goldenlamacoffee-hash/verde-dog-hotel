@@ -19,10 +19,10 @@ export default async function AdminContentPage() {
     id:           a.id as string,
     filename:     a.filename as string,
     storage_path: a.storage_path as string,
-    url:          (a.url ?? a.public_url) as string,
+    public_url:   a.public_url as string,
     mime_type:    (a.mime_type ?? null) as string | null,
     size_bytes:   (a.size_bytes ?? null) as number | null,
-    alt_text:     (a.alt_text ?? null) as string | null,
+    alt:          (a.alt ?? null) as string | null,
     tags:         (a.tags ?? null) as string[] | null,
     created_at:   a.created_at as string,
   }))

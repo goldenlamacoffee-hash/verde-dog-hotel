@@ -11,12 +11,26 @@ export interface MediaAsset {
   id: string
   filename: string
   storage_path: string
-  url: string
+  public_url: string
   mime_type: string | null
   size_bytes: number | null
-  alt_text: string | null
+  alt: string | null
   tags: string[] | null
   created_at: string
+}
+
+/**
+ * Suggest a default alt text from a filename. Returns an empty string for
+ * generic camera/screenshot names (IMG_1234.jpg, DSC00123.png, Screenshot...)
+ * so we never expose a meaningless filename as public accessibility text.
+ */
+function suggestAltFromFilename(filename: string): string {
+  const base = filename.replace(/\.[a-zA-Z0-9]+$/, '')
+  const generic = /^(img|image|dsc|dscn|photo|pic|screenshot|snimek|snímek)[\s_-]*\d*$/i
+  if (generic.test(base.trim()) || /^\d+$/.test(base.trim())) return ''
+  const cleaned = base.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!cleaned || !/[a-zA-Zà-žÀ-Ž]/.test(cleaned)) return ''
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
 }
 
 interface Props {
@@ -164,7 +178,7 @@ function DeleteConfirmModal({ asset, onConfirm, onCancel, isPending }: DeleteCon
   // Check usage as soon as this modal mounts
   useCallback(() => {}, [])
   useState(() => {
-    checkMediaAssetUsage(asset.url).then(u => { setUsage(u); setChecking(false) })
+    checkMediaAssetUsage(asset.public_url).then(u => { setUsage(u); setChecking(false) })
   })
 
   return (
@@ -230,7 +244,7 @@ function AssetPanel({
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const [altText, setAltText] = useState(asset.alt_text ?? '')
+  const [altText, setAltText] = useState(asset.alt ?? suggestAltFromFilename(asset.filename))
   const [tags, setTags]       = useState((asset.tags ?? []).join(', '))
   const [copied, setCopied]   = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -241,7 +255,7 @@ function AssetPanel({
   const [replaceError, setReplaceError]       = useState<string | null>(null)
 
   function copyUrl() {
-    navigator.clipboard.writeText(asset.url)
+    navigator.clipboard.writeText(asset.public_url)
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
@@ -250,7 +264,7 @@ function AssetPanel({
     startTransition(async () => {
       await upsertMediaAsset({
         id: asset.id, filename: asset.filename, storage_path: asset.storage_path,
-        public_url: asset.url, alt: altText.trim() || null,
+        public_url: asset.public_url, alt: altText.trim() || null,
         tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
       } as Parameters<typeof upsertMediaAsset>[0])
       router.refresh()
@@ -293,7 +307,7 @@ function AssetPanel({
         <div className="w-full max-w-lg rounded-xl overflow-hidden" style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}>
           <div className="relative h-48 w-full" style={{ background: 'var(--admin-bg)' }}>
             {isImage ? (
-              <Image src={asset.url} alt={asset.alt_text ?? asset.filename} fill className="object-contain" unoptimized />
+              <Image src={asset.public_url} alt={asset.alt ?? asset.filename} fill className="object-contain" unoptimized />
             ) : (
               <div className="flex items-center justify-center h-full">
                 <FileIcon className="w-12 h-12 opacity-30" style={{ color: 'var(--admin-text-muted)' }} />
@@ -437,7 +451,7 @@ export function MediaLibrary({ assets: initial, total, page, limit, search, tag,
                 className="group relative aspect-square rounded-xl overflow-hidden text-left"
                 style={{ background: 'var(--admin-card)', border: '1px solid var(--admin-card-border)' }}>
                 {isImage ? (
-                  <Image src={asset.url} alt={asset.alt_text ?? asset.filename} fill
+                  <Image src={asset.public_url} alt={asset.alt ?? asset.filename} fill
                     className="object-cover transition-transform group-hover:scale-105" unoptimized />
                 ) : (
                   <div className="flex items-center justify-center h-full">

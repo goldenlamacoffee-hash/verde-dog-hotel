@@ -413,14 +413,25 @@ export async function upsertMediaAsset(data: {
   const { error } = data.id
     ? await supabase.from('media_assets').update({ ...payload, id: undefined }).eq('id', data.id)
     : await supabase.from('media_assets').insert(payload)
-  if (error) throw new Error(error.message)
+  if (error) {
+    console.error('[media] upsertMediaAsset failed', {
+      action: data.id ? 'update' : 'insert',
+      code: error.code,
+      message: error.message,
+      storage_path: data.storage_path,
+    })
+    throw new Error('Obrázek se nepodařilo uložit do knihovny médií. Zkuste to prosím znovu.')
+  }
   revalidatePath('/admin/media')
 }
 
 export async function deleteMediaAsset(id: string) {
   const { deleteMediaAsset: deleteLib } = await import('@/lib/media')
   const { error } = await deleteLib(id)
-  if (error) throw new Error(error)
+  if (error) {
+    console.error('[media] deleteMediaAsset failed', { id, message: error })
+    throw new Error('Médium se nepodařilo smazat. Zkuste to prosím znovu.')
+  }
   revalidatePath('/admin/media')
 }
 
