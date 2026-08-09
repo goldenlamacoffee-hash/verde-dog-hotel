@@ -7,7 +7,7 @@ import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { aboutIntro, aboutValues } from '@/content/pages'
 import { pillars } from '@/content/home'
 import { PillarIcon } from '@/components/brand/pillar-icon'
-import { getPublicPageSection } from '@/lib/public-data'
+import { getPublicPageSections } from '@/lib/public-data'
 
 export const metadata: Metadata = {
   title: 'O hotelu',
@@ -15,8 +15,25 @@ export const metadata: Metadata = {
     'Psí hotel VERDE vznikl z respektu k psům. Klidné venkovské prostředí nedaleko Brna, individuální péče a bezpečné zázemí.',
 }
 
+interface TeamMemberCms { name?: string; role?: string; bio?: string }
+interface ValueItemCms { title?: string; description?: string }
+
 export default async function AboutPage() {
-  const hero = await getPublicPageSection('o-hotelu', 'hero')
+  const sections = await getPublicPageSections('o-hotelu')
+  const hero = sections.hero
+  const story = sections.story
+  const team = sections.team
+  const values = sections.values
+
+  const storyParagraphs = Array.isArray(story?.paragraphs) && story.paragraphs.length > 0
+    ? (story.paragraphs as string[])
+    : aboutIntro.paragraphs
+
+  const valueItems = Array.isArray(values?.items) && values.items.length > 0
+    ? (values.items as ValueItemCms[])
+    : aboutValues
+
+  const teamMembers = Array.isArray(team?.members) ? (team.members as TeamMemberCms[]) : []
 
   return (
     <>
@@ -39,11 +56,11 @@ export default async function AboutPage() {
           </div>
           <div className="flex flex-col gap-6">
             <SectionHeading
-              eyebrow="Náš přístup"
-              title="Klid, bezpečí a dostatek přírody"
+              eyebrow={(story?.eyebrow as string) ?? 'Náš přístup'}
+              title={(story?.headline as string) ?? 'Klid, bezpečí a dostatek přírody'}
               withSprig
             />
-            {aboutIntro.paragraphs.map((paragraph) => (
+            {storyParagraphs.map((paragraph) => (
               <p key={paragraph} className="text-pretty leading-relaxed text-verde-moss">
                 {paragraph}
               </p>
@@ -52,16 +69,49 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      <section className="bg-secondary/40 py-16 md:py-24">
+      {teamMembers.length > 0 && (
+        <section className="bg-secondary/40 py-16 md:py-24">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <SectionHeading
+              eyebrow={(team?.eyebrow as string) ?? 'Náš tým'}
+              title={(team?.headline as string) ?? 'Lidé, kterým na psech záleží'}
+              align="center"
+              withSprig
+              description={team?.description as string | undefined}
+              className="mx-auto max-w-2xl"
+            />
+            <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {teamMembers.map((member) => (
+                <div
+                  key={member.name}
+                  className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-8"
+                >
+                  <h3 className="font-serif text-xl font-semibold text-verde-deep">
+                    {member.name}
+                  </h3>
+                  <p className="label-caps text-verde-wood">{member.role}</p>
+                  {member.bio && (
+                    <p className="mt-2 text-pretty text-sm leading-relaxed text-verde-moss">
+                      {member.bio}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="bg-background py-16 md:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
-            eyebrow="Hodnoty"
-            title="Na čem nám záleží"
+            eyebrow={(values?.eyebrow as string) ?? 'Hodnoty'}
+            title={(values?.headline as string) ?? 'Na čem nám záleží'}
             align="center"
             className="mx-auto max-w-2xl"
           />
           <div className="mt-14 grid gap-6 md:grid-cols-3">
-            {aboutValues.map((value) => (
+            {valueItems.map((value) => (
               <div
                 key={value.title}
                 className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-8"
@@ -79,7 +129,7 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      <section className="bg-background py-16 md:py-24">
+      <section className="bg-secondary/40 py-16 md:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
             eyebrow="Proč Verde"
