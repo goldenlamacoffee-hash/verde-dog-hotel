@@ -264,4 +264,20 @@ export interface ContactSettingsValue {
   instagram?: string
   /** Serialised opening hours array saved by the admin editor. */
   openingHours?: { days: string; hours: string }[]
+
+  // ── Contact page "location" block (static photo + address + Maps link) ──
+  /** Optional heading override — defaults to "Kde nás najdete" on the page. */
+  locationTitle?: string
+  /** Optional short editorial text below the address. */
+  locationDescription?: string
+  addressLine1?: string
+  addressLine2?: string
+  city?: string
+  postcode?: string
+  country?: string
+  /** Admin-supplied, server-validated Google Maps destination URL. */
+  googleMapsUrl?: string
+  /** Public URL of the location photo, chosen from the media library. */
+  locationImageUrl?: string
+  locationImageAlt?: string
 }

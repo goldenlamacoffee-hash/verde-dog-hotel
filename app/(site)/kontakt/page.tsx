@@ -3,6 +3,7 @@ import { Mail, MapPin, Phone, Clock, Globe } from 'lucide-react'
 import { PageHeader } from '@/components/common/page-header'
 import { SectionHeading } from '@/components/common/section-heading'
 import { ContactForm } from '@/components/contact/contact-form'
+import { ContactLocation } from '@/components/contact/contact-location'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { siteSettings } from '@/content/site'
 import { getPublicPageSection, getPublicContactSettings } from '@/lib/public-data'
@@ -105,6 +106,21 @@ export default async function ContactPage() {
           </div>
         </div>
       </section>
+
+      <ContactLocation
+        location={{
+          locationTitle: contact.locationTitle,
+          locationDescription: contact.locationDescription,
+          addressLine1: contact.addressLine1,
+          addressLine2: contact.addressLine2,
+          city: contact.city,
+          postcode: contact.postcode,
+          country: contact.country,
+          googleMapsUrl: contact.googleMapsUrl,
+          locationImageUrl: contact.locationImageUrl,
+          locationImageAlt: contact.locationImageAlt,
+        }}
+      />
     </>
   )
 }

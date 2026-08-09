@@ -172,6 +172,19 @@ export async function getPublicContactSettings(): Promise<ContactSettingsValue> 
     openingHours: (db.openingHours && db.openingHours.length > 0)
       ? db.openingHours
       : fallback.openingHours,
+
+    // Location block — no static fallback exists for these; only render
+    // whatever the admin has actually filled in (see empty-state rules).
+    locationTitle:        pick(db.locationTitle,        undefined),
+    locationDescription:  pick(db.locationDescription,  undefined),
+    addressLine1:         pick(db.addressLine1,          undefined),
+    addressLine2:         pick(db.addressLine2,          undefined),
+    city:                 pick(db.city,                  undefined),
+    postcode:             pick(db.postcode,               undefined),
+    country:              pick(db.country,                undefined),
+    googleMapsUrl:        pick(db.googleMapsUrl,          undefined),
+    locationImageUrl:     pick(db.locationImageUrl,       undefined),
+    locationImageAlt:     pick(db.locationImageAlt,       undefined),
   }
 }
 
