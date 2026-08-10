@@ -5,9 +5,11 @@ import { SectionHeading } from '@/components/common/section-heading'
 import { ReservationCta } from '@/components/home/reservation-cta'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { aboutIntro, aboutValues } from '@/content/pages'
-import { pillars } from '@/content/home'
+import { pillars as staticPillars } from '@/content/home'
+import type { Pillar } from '@/lib/types'
 import { PillarIcon } from '@/components/brand/pillar-icon'
 import { getPublicPageSections } from '@/lib/public-data'
+import { cmsField, cmsList } from '@/lib/cms'
 
 export const metadata: Metadata = {
   title: 'O hotelu',
@@ -24,16 +26,22 @@ export default async function AboutPage() {
   const story = sections.story
   const team = sections.team
   const values = sections.values
+  const principles = sections.principles
 
   const storyParagraphs = Array.isArray(story?.paragraphs) && story.paragraphs.length > 0
     ? (story.paragraphs as string[])
     : aboutIntro.paragraphs
+
+  const storyImage = cmsField(story, 'image_url', '/images/about-01.png')
+  const storyImageAlt = cmsField(story, 'image_alt', 'Pečovatel na procházce se psem v přírodě')
 
   const valueItems = Array.isArray(values?.items) && values.items.length > 0
     ? (values.items as ValueItemCms[])
     : aboutValues
 
   const teamMembers = Array.isArray(team?.members) ? (team.members as TeamMemberCms[]) : []
+
+  const principleItems = cmsList<Pillar>(principles, 'items', staticPillars)
 
   return (
     <>
@@ -47,8 +55,8 @@ export default async function AboutPage() {
         <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:items-center lg:gap-16 lg:px-8">
           <div className="relative aspect-[4/5] overflow-hidden rounded-3xl">
             <Image
-              src="/images/about-01.png"
-              alt="Pečovatel na procházce se psem v přírodě"
+              src={storyImage}
+              alt={storyImageAlt}
               fill
               className="object-cover"
               sizes="(max-width: 1024px) 100vw, 50vw"
@@ -132,13 +140,13 @@ export default async function AboutPage() {
       <section className="bg-secondary/40 py-16 md:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
-            eyebrow="Proč Verde"
-            title="Pět principů naší péče"
+            eyebrow={cmsField(principles, 'eyebrow', 'Proč Verde')}
+            title={cmsField(principles, 'headline', 'Pět principů naší péče')}
             align="center"
             className="mx-auto max-w-2xl"
           />
           <div className="mt-14 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-            {pillars.map((pillar) => (
+            {principleItems.map((pillar) => (
               <div key={pillar.title} className="flex flex-col gap-3">
                 <div className="flex size-12 items-center justify-center rounded-full bg-secondary text-verde-green">
                   <PillarIcon name={pillar.icon} className="size-6" />

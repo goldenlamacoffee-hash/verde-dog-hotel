@@ -8,6 +8,7 @@ import { CtaLink } from '@/components/common/cta-button'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { formatPrice, unitLabel } from '@/lib/format'
 import { getPublicPriceItems, getPublicPageSection } from '@/lib/public-data'
+import { cmsList } from '@/lib/cms'
 
 interface PricingNoteCms {
   [key: string]: unknown
@@ -15,6 +16,7 @@ interface PricingNoteCms {
   long_stay_discount?: string
   multi_dog_discount?: string
   cancellation_policy?: string
+  included?: string[]
 }
 
 export const metadata: Metadata = {
@@ -23,7 +25,7 @@ export const metadata: Metadata = {
     'Přehledný ceník psího hotelu VERDE — cena za noc, zvýhodnění pro další psy a doplňkové služby. Ceny jsou orientační.',
 }
 
-const included = [
+const staticIncluded = [
   'Ubytování v klidném a bezpečném zázemí',
   'Krmení a čerstvá voda',
   'Každodenní pohyb a procházky',
@@ -46,6 +48,8 @@ export default async function PricingPage() {
         (item): item is string => Boolean(item),
       )
     : []
+
+  const included = cmsList<string>(note, 'included', staticIncluded)
 
   return (
     <>
