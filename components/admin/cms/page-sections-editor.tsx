@@ -30,6 +30,7 @@ const IMAGE_KEYS: Record<string, string[]> = {
   intro:                ['image_url'],
   accommodation:        ['card_0_image', 'card_1_image', 'card_2_image'],
   accommodation_detail: ['card_0_image', 'card_1_image', 'card_2_image'],
+  story:                ['image_url'],
 }
 
 // ─── Section keys that get a fully structured Czech form instead of raw JSON ──
@@ -39,6 +40,8 @@ const SECTION_LABELS: Record<string, string> = {
   hero:                  'Hero – hlavní banner',
   intro:                 'Intro – představení',
   pillars:               'Pilíře – proč Verde',
+  principles:            'Pět principů naší péče',
+  trust:                 'Důvěra a transparentnost',
   accommodation:         'Ubytování',
   accommodation_detail:  'Ubytování – detail',
   care_detail:           'Péče – detail',
@@ -585,7 +588,7 @@ function SectionCard({
   )
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Main ────────��────────────────────────────────────────────────────────────
 export function PageSectionsEditor({ sections, mediaAssets, mediaTotal }: Props) {
   const [key, setKey] = useState(0)
 

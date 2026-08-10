@@ -1,9 +1,22 @@
 import Image from 'next/image'
 import { ShieldCheck } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
-import { trustItems } from '@/content/home'
+import { trustItems as staticTrustItems } from '@/content/home'
+import { cmsField, cmsList } from '@/lib/cms'
+import type { TrustItem } from '@/lib/types'
 
-export function Trust() {
+interface Props { cms?: Record<string, unknown> | null }
+
+export function Trust({ cms }: Props) {
+  const eyebrow = cmsField(cms, 'eyebrow', 'Důvěra a transparentnost')
+  const title = cmsField(cms, 'headline', 'Víte, v jakých rukou váš pes je')
+  const description = cmsField(
+    cms,
+    'description',
+    'Přehledný režim, evidence potřeb každého psa a otevřená komunikace po celou dobu pobytu.',
+  )
+  const items = cmsList<TrustItem>(cms, 'items', staticTrustItems)
+
   return (
     <section className="relative isolate overflow-hidden bg-primary text-primary-foreground">
       <Image
@@ -20,15 +33,15 @@ export function Trust() {
         <SectionHeading
           tone="light"
           align="center"
-          eyebrow="Důvěra a transparentnost"
-          title="Víte, v jakých rukou váš pes je"
+          eyebrow={eyebrow}
+          title={title}
           withSprig
-          description="Přehledný režim, evidence potřeb každého psa a otevřená komunikace po celou dobu pobytu."
+          description={description}
           className="mx-auto max-w-2xl"
         />
 
         <ul className="mt-14 grid gap-x-8 gap-y-10 sm:grid-cols-2">
-          {trustItems.map((item) => (
+          {items.map((item) => (
             <li key={item.title} className="flex gap-4">
               <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full border border-verde-white/25">
                 <ShieldCheck className="size-5 text-verde-white" strokeWidth={1.5} aria-hidden="true" />

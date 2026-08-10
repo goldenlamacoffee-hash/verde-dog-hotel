@@ -7,12 +7,13 @@ import { Trust } from '@/components/home/trust'
 import { GalleryPreview } from '@/components/home/gallery-preview'
 import { Testimonials } from '@/components/home/testimonials'
 import { ReservationCta } from '@/components/home/reservation-cta'
-import { getPublicTestimonials, getPublicPageSections } from '@/lib/public-data'
+import { getPublicTestimonials, getPublicPageSections, getPublicGalleryImages } from '@/lib/public-data'
 
 export default async function HomePage() {
-  const [testimonials, sections] = await Promise.all([
+  const [testimonials, sections, galleryImages] = await Promise.all([
     getPublicTestimonials(),
     getPublicPageSections('home'),
+    getPublicGalleryImages(),
   ])
 
   return (
@@ -22,8 +23,8 @@ export default async function HomePage() {
       <Intro cms={sections.intro} />
       <Accommodation cms={sections.accommodation} />
       <Routine cms={sections.routine} />
-      <Trust />
-      <GalleryPreview />
+      <Trust cms={sections.trust} />
+      <GalleryPreview images={galleryImages} />
       <Testimonials items={testimonials} />
       <ReservationCta cms={sections.cta} />
     </>

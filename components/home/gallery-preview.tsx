@@ -2,11 +2,14 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowUpRight } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
-import { galleryImages } from '@/content/gallery'
+import { galleryImages as staticGalleryImages } from '@/content/gallery'
+import type { GalleryImage } from '@/lib/types'
 
-const preview = galleryImages.slice(0, 5)
+interface Props { images?: GalleryImage[] | null }
 
-export function GalleryPreview() {
+export function GalleryPreview({ images }: Props) {
+  const preview = (images && images.length > 0 ? images : staticGalleryImages).slice(0, 5)
+
   return (
     <section className="bg-background">
       <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 md:py-28 lg:px-8">
