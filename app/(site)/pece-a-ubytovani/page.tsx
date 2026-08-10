@@ -40,11 +40,11 @@ export default async function CarePage() {
       <section className="bg-secondary/40 py-16 md:py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <SectionHeading
-            eyebrow="Služby"
-            title="Co je součástí pobytu"
+            eyebrow={(sections.services_intro?.eyebrow as string) ?? 'Služby'}
+            title={(sections.services_intro?.headline as string) ?? 'Co je součástí pobytu'}
             align="center"
             withSprig
-            description="Základní péče je zahrnuta v ceně pobytu. Doplňkové služby si můžete přiobjednat podle potřeb vašeho psa."
+            description={(sections.services_intro?.description as string) ?? 'Základní péče je zahrnuta v ceně pobytu. Doplňkové služby si můžete přiobjednat podle potřeb vašeho psa.'}
             className="mx-auto max-w-2xl"
           />
 

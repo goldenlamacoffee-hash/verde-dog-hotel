@@ -37,8 +37,12 @@ export function Accommodation({ cms }: Props) {
 
         <div className="mt-14 grid gap-6 md:grid-cols-3">
           {accommodationCards.map((card, idx) => {
-            const imgSrc = (cms?.[`card_${idx}_image`] as string) || card.image
-            const imgAlt = (cms?.[`card_${idx}_image_alt`] as string) || card.imageAlt
+            const imgSrc      = (cms?.[`card_${idx}_image`] as string) || card.image
+            const imgAlt      = (cms?.[`card_${idx}_image_alt`] as string) || card.imageAlt
+            const cardTitle   = (cms?.[`card_${idx}_title`] as string) || card.title
+            const cardDesc    = (cms?.[`card_${idx}_description`] as string) || card.description
+            const ctaLabel    = (cms?.[`card_${idx}_cta_label`] as string) || 'Zjistit více'
+            const ctaHref     = (cms?.[`card_${idx}_cta_href`] as string) || card.detailsHref
             return (
             <article
               key={card.title}
@@ -56,17 +60,17 @@ export function Accommodation({ cms }: Props) {
               </div>
               <div className="flex flex-1 flex-col p-6">
                 <h3 className="font-serif text-xl font-semibold text-verde-deep">
-                  {card.title}
+                  {cardTitle}
                 </h3>
                 <p className="mt-2 flex-1 text-pretty text-sm leading-relaxed text-verde-moss">
-                  {card.description}
+                  {cardDesc}
                 </p>
-                {card.detailsHref ? (
+                {ctaHref ? (
                   <Link
-                    href={card.detailsHref}
+                    href={ctaHref}
                     className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-verde-green transition-colors hover:text-verde-deep"
                   >
-                    Zjistit více
+                    {ctaLabel}
                     <ArrowUpRight className="size-4" aria-hidden="true" />
                   </Link>
                 ) : null}
