@@ -34,7 +34,7 @@ export function Accommodation({ cms }: Props) {
         title: card.title,
         description: card.description,
         ctaLabel: 'Zjistit více',
-        ctaHref: card.detailsHref,
+        ctaHref: card.detailsHref ?? '',
       }))
     : [0, 1, 2].map((idx) => ({
         image: cmsField(cms, `card_${idx}_image`, ''),
