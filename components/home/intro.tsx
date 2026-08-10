@@ -2,8 +2,9 @@ import Image from 'next/image'
 import { PawPrint, Trees, Heart, ShieldCheck, Leaf, type LucideIcon } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
 import { CtaLink } from '@/components/common/cta-button'
+import { cmsField, cmsList } from '@/lib/cms'
 
-interface Props { cms?: Record<string, unknown> }
+interface Props { cms?: Record<string, unknown> | null }
 
 interface Feature { icon?: string; text?: string }
 
@@ -16,14 +17,14 @@ const FEATURE_ICONS: Record<string, LucideIcon> = {
 }
 
 export function Intro({ cms }: Props) {
-  const eyebrow    = (cms?.eyebrow    as string) || 'Vítejte ve Verde'
-  const title      = (cms?.headline   as string) || (cms?.title as string) || 'Pobyt, který respektuje povahu vašeho psa'
-  const lead       = (cms?.description as string) || (cms?.lead as string) || 'Věříme, že spokojený pes potřebuje klid, prostor a lidský přístup. Proto ve Verde spojujeme přírodní prostředí s péčí přizpůsobenou každému psovi zvlášť — od krmení a pohybu až po odpočinek.'
-  const body       = (cms?.body       as string) || 'Nacházíme se v klidné lokalitě Brno – venkov, obklopeni zelení a dostatkem místa k procházkám. Ať už jedete na dovolenou nebo služební cestu, váš pes u nás najde bezpečné zázemí a lidi, kterým na něm záleží.'
-  const ctaLabel   = (cms?.cta_label   as string) || 'Více o hotelu'
-  const imageUrl   = (cms?.image_url   as string) || '/images/intro-detail-01.png'
-  const imageAlt   = (cms?.image_alt   as string) || 'Detail klidného ohaře v přírodě'
-  const features   = Array.isArray(cms?.features) ? (cms!.features as Feature[]) : null
+  const eyebrow    = cmsField(cms, 'eyebrow', 'Vítejte ve Verde')
+  const title      = cmsField(cms, 'headline', 'Pobyt, který respektuje povahu vašeho psa')
+  const lead       = cmsField(cms, 'description', 'Věříme, že spokojený pes potřebuje klid, prostor a lidský přístup. Proto ve Verde spojujeme přírodní prostředí s péčí přizpůsobenou každému psovi zvlášť — od krmení a pohybu až po odpočinek.')
+  const body       = cmsField(cms, 'body', 'Nacházíme se v klidné lokalitě Brno – venkov, obklopeni zelení a dostatkem místa k procházkám. Ať už jedete na dovolenou nebo služební cestu, váš pes u nás najde bezpečné zázemí a lidi, kterým na něm záleží.')
+  const ctaLabel   = cmsField(cms, 'cta_label', 'Více o hotelu')
+  const imageUrl   = cmsField(cms, 'image_url', '/images/intro-detail-01.png')
+  const imageAlt   = cmsField(cms, 'image_alt', 'Detail klidného ohaře v přírodě')
+  const features   = cmsList<Feature>(cms, 'features', [])
 
   return (
     <section className="bg-background">

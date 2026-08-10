@@ -2,17 +2,18 @@ import Image from 'next/image'
 import { CtaLink } from '@/components/common/cta-button'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { siteSettings } from '@/content/site'
+import { cmsField } from '@/lib/cms'
 
-interface Props { cms?: Record<string, unknown> }
+interface Props { cms?: Record<string, unknown> | null }
 
 export function Hero({ cms }: Props) {
-  const headline    = (cms?.headline    as string) || 'Kde jsou psi jako doma'
-  const description = (cms?.description as string) || 'Psí hotel v srdci přírody nedaleko Brna. Individuální péče, bezpečné zázemí a dostatek pohybu pro spokojený pobyt vašeho psa.'
-  const badge       = (cms?.badge       as string) || siteSettings.tagline
-  const ctaPrimary  = (cms?.cta_primary  as string) || 'Rezervovat pobyt'
-  const ctaSecondary= (cms?.cta_secondary as string) || 'Jak to u nás vypadá'
-  const imageUrl    = (cms?.image_url   as string) || '/images/hero-verde.png'
-  const imageAlt    = (cms?.image_alt   as string) || 'Ohař v klidné přírodní krajině při západu slunce'
+  const headline    = cmsField(cms, 'headline', 'Kde jsou psi jako doma')
+  const description = cmsField(cms, 'description', 'Psí hotel v srdci přírody nedaleko Brna. Individuální péče, bezpečné zázemí a dostatek pohybu pro spokojený pobyt vašeho psa.')
+  const badge       = cmsField(cms, 'badge', siteSettings.tagline)
+  const ctaPrimary  = cmsField(cms, 'cta_primary', 'Rezervovat pobyt')
+  const ctaSecondary= cmsField(cms, 'cta_secondary', 'Jak to u nás vypadá')
+  const imageUrl    = cmsField(cms, 'image_url', '/images/hero-verde.png')
+  const imageAlt    = cmsField(cms, 'image_alt', 'Ohař v klidné přírodní krajině při západu slunce')
 
   return (
     <section className="relative isolate flex min-h-[92vh] items-end overflow-hidden">
