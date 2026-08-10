@@ -1,14 +1,15 @@
 import { ShieldCheck } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
+import { cmsField, cmsList, cmsOptionalField } from '@/lib/cms'
 
 interface RequirementItem { title?: string; description?: string }
 interface Props { cms?: Record<string, unknown> | null }
 
 export function RequirementsSection({ cms }: Props) {
-  const eyebrow  = (cms?.eyebrow  as string) || 'Podmínky pobytu'
-  const headline = (cms?.headline as string) || 'Co od vás potřebujeme'
-  const description = cms?.description as string | undefined
-  const items = Array.isArray(cms?.items) ? (cms!.items as RequirementItem[]) : []
+  const eyebrow  = cmsField(cms, 'eyebrow', 'Podmínky pobytu')
+  const headline = cmsField(cms, 'headline', 'Co od vás potřebujeme')
+  const description = cmsOptionalField(cms, 'description')
+  const items = cmsList<RequirementItem>(cms, 'items', [])
 
   if (items.length === 0) return null
 

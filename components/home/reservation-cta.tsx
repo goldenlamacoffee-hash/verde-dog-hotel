@@ -2,15 +2,16 @@ import { Phone, Mail } from 'lucide-react'
 import { CtaLink } from '@/components/common/cta-button'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
 import { siteSettings } from '@/content/site'
+import { cmsField, cmsOptionalField } from '@/lib/cms'
 
-interface Props { cms?: Record<string, unknown> }
+interface Props { cms?: Record<string, unknown> | null }
 
 export function ReservationCta({ cms }: Props) {
   const { contact } = siteSettings
-  const headline    = (cms?.headline    as string) || 'Zajistěte svému psovi místo ve Verde'
-  const description = (cms?.description as string) || 'Kapacita je omezená, abychom udrželi individuální přístup. Nezávazně nám napište termín a my se vám ozveme s potvrzením.'
-  const ctaLabel    = (cms?.cta_primary  as string) || (cms?.cta_label as string) || 'Rezervovat pobyt'
-  const ctaSecondary= cms?.cta_secondary as string | undefined
+  const headline    = cmsField(cms, 'headline', 'Zajistěte svému psovi místo ve Verde')
+  const description = cmsField(cms, 'description', 'Kapacita je omezená, abychom udrželi individuální přístup. Nezávazně nám napište termín a my se vám ozveme s potvrzením.')
+  const ctaLabel    = cmsOptionalField(cms, 'cta_primary') ?? cmsField(cms, 'cta_label', 'Rezervovat pobyt')
+  const ctaSecondary= cmsOptionalField(cms, 'cta_secondary')
 
   return (
     <section className="bg-background">

@@ -1,14 +1,14 @@
 import { Droplets } from 'lucide-react'
 import { SectionHeading } from '@/components/common/section-heading'
+import { cmsField, cmsList } from '@/lib/cms'
 
 interface Props { cms?: Record<string, unknown> | null }
 
 export function FeedingSection({ cms }: Props) {
-  const eyebrow     = (cms?.eyebrow     as string) || 'Krmení'
-  const headline     = (cms?.headline    as string) || 'Krmíme podle vašich pokynů'
-  const description = (cms?.description as string) ||
-    'Respektujeme stávající krmný plán vašeho psa. Přivezete-li vlastní krmivo, použijeme ho.'
-  const notes = Array.isArray(cms?.notes) ? (cms!.notes as string[]) : []
+  const eyebrow     = cmsField(cms, 'eyebrow', 'Krmení')
+  const headline     = cmsField(cms, 'headline', 'Krmíme podle vašich pokynů')
+  const description = cmsField(cms, 'description', 'Respektujeme stávající krmný plán vašeho psa. Přivezete-li vlastní krmivo, použijeme ho.')
+  const notes = cmsList<string>(cms, 'notes', [])
 
   return (
     <section className="bg-background">

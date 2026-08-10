@@ -1,7 +1,8 @@
 import { SectionHeading } from '@/components/common/section-heading'
 import { routine } from '@/content/home'
+import { cmsField, cmsList } from '@/lib/cms'
 
-interface Props { cms?: Record<string, unknown> }
+interface Props { cms?: Record<string, unknown> | null }
 
 interface ScheduleItem {
   time?: string
@@ -11,18 +12,20 @@ interface ScheduleItem {
 }
 
 export function Routine({ cms }: Props) {
-  const eyebrow    = (cms?.eyebrow    as string) || 'Den ve Verde'
-  const title      = (cms?.headline   as string) || 'Vyvážený režim od rána do večera'
-  const description= (cms?.description as string) || 'Pravidelnost dává psům jistotu. Náš den kombinuje pohyb, péči a dostatek klidu na odpočinek.'
+  const eyebrow    = cmsField(cms, 'eyebrow', 'Den ve Verde')
+  const title      = cmsField(cms, 'headline', 'Vyvážený režim od rána do večera')
+  const description= cmsField(cms, 'description', 'Pravidelnost dává psům jistotu. Náš den kombinuje pohyb, péči a dostatek klidu na odpočinek.')
 
-  const cmsSchedule = Array.isArray(cms?.schedule) ? (cms!.schedule as ScheduleItem[]) : null
-  const steps = cmsSchedule && cmsSchedule.length > 0
-    ? cmsSchedule.map((step) => ({
+  // Once a CMS row exists, its `schedule` array is authoritative — even if
+  // empty. The static `routine` steps only bootstrap when there is no row.
+  const cmsSchedule = cmsList<ScheduleItem>(cms, 'schedule', [])
+  const steps = cms == null
+    ? routine
+    : cmsSchedule.map((step) => ({
         time: step.time ?? '',
         title: step.title ?? step.activity ?? '',
         description: step.description,
       }))
-    : routine
 
   return (
     <section className="bg-background">
