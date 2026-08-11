@@ -29,8 +29,11 @@ export const siteSettings: SiteSettings = {
       { days: 'Příjezdy a odjezdy', hours: 'po domluvě' },
       { days: 'Telefonicky', hours: '9:00 – 18:00' },
     ],
-    instagram: '#',
-    facebook: '#',
+    // Empty by default — admin has not connected these accounts yet.
+    // An empty string (not '#') ensures the footer icon is hidden until a real
+    // URL is saved in Nastavení webu → Kontakt, instead of rendering a dead link.
+    instagram: '',
+    facebook: '',
     company: {
       name: 'VERDE',
     },
