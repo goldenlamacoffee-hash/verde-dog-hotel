@@ -1,13 +1,17 @@
 import { Phone, Mail } from 'lucide-react'
 import { CtaLink } from '@/components/common/cta-button'
 import { LeafSprig } from '@/components/brand/leaf-sprig'
-import { siteSettings } from '@/content/site'
+import { getPublicContactSettings } from '@/lib/public-data'
 import { cmsField, cmsOptionalField } from '@/lib/cms'
 
 interface Props { cms?: Record<string, unknown> | null }
 
-export function ReservationCta({ cms }: Props) {
-  const { contact } = siteSettings
+export async function ReservationCta({ cms }: Props) {
+  // Single authoritative source for phone/email — DB with static fallback,
+  // same as the footer. Fixes the CTA showing the placeholder phone/email
+  // instead of what the admin saved in Nastavení webu → Kontakt.
+  const contact = await getPublicContactSettings()
+  const phoneHref = contact.phone ? `tel:${contact.phone.replace(/\s/g, '')}` : undefined
   const headline    = cmsField(cms, 'headline', 'Zajistěte svému psovi místo ve Verde')
   const description = cmsField(cms, 'description', 'Kapacita je omezená, abychom udrželi individuální přístup. Nezávazně nám napište termín a my se vám ozveme s potvrzením.')
   const ctaLabel    = cmsOptionalField(cms, 'cta_primary') ?? cmsField(cms, 'cta_label', 'Rezervovat pobyt')
@@ -29,18 +33,22 @@ export function ReservationCta({ cms }: Props) {
               <CtaLink href="/rezervace" variant="light" size="lg">
                 {ctaLabel}
               </CtaLink>
-              <CtaLink href={contact.phoneHref} variant="outlineLight" size="lg">
-                <Phone className="size-4" aria-hidden="true" />
-                {contact.phone}
-              </CtaLink>
+              {phoneHref && contact.phone && (
+                <CtaLink href={phoneHref} variant="outlineLight" size="lg">
+                  <Phone className="size-4" aria-hidden="true" />
+                  {contact.phone}
+                </CtaLink>
+              )}
             </div>
-            <a
-              href={`mailto:${contact.email}`}
-              className="mt-6 inline-flex items-center gap-2 text-sm text-verde-white/70 transition-colors hover:text-verde-white"
-            >
-              <Mail className="size-4" aria-hidden="true" />
-              {ctaSecondary ? `${ctaSecondary} — ${contact.email}` : contact.email}
-            </a>
+            {contact.email && (
+              <a
+                href={`mailto:${contact.email}`}
+                className="mt-6 inline-flex items-center gap-2 text-sm text-verde-white/70 transition-colors hover:text-verde-white"
+              >
+                <Mail className="size-4" aria-hidden="true" />
+                {ctaSecondary ? `${ctaSecondary} — ${contact.email}` : contact.email}
+              </a>
+            )}
           </div>
         </div>
       </div>
