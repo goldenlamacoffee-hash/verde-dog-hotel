@@ -157,7 +157,46 @@ export interface CalendarAppearance {
   /** Unreleased day (month draft or not yet created) */
   unreleasedBackground: string
   unreleasedText:       string
+
+  // ─── Legend labels ──────────────────────────────────────────────────────
+  // Editable Czech copy for the public availability-calendar legend.
+  // Keys map to the "AVAILABILITY" and "CALENDAR STATES" legend groups.
+  legendFree:                    string
+  legendLimited:                 string
+  legendLastSpot:                string
+  legendFull:                    string
+  legendTemporarilyUnavailable:  string
+  legendUnreleased:              string
+  legendSelected:                string
+  legendRange:                   string
+  legendToday:                   string
 }
+
+/** Keys in {@link CalendarAppearance} that hold hex colors (validated as such). */
+export const CALENDAR_APPEARANCE_COLOR_KEYS: (keyof CalendarAppearance)[] = [
+  'availableBackground', 'availableText',
+  'limitedBackground',   'limitedText',
+  'lastBackground',      'lastText',
+  'fullBackground',      'fullText',
+  'selectedBackground',  'selectedText',
+  'rangeBackground',
+  'todayBorder',
+  'closedBackground',    'closedText',
+  'unreleasedBackground', 'unreleasedText',
+]
+
+/** Keys in {@link CalendarAppearance} that hold editable legend label text. */
+export const CALENDAR_APPEARANCE_LABEL_KEYS: (keyof CalendarAppearance)[] = [
+  'legendFree',
+  'legendLimited',
+  'legendLastSpot',
+  'legendFull',
+  'legendTemporarilyUnavailable',
+  'legendUnreleased',
+  'legendSelected',
+  'legendRange',
+  'legendToday',
+]
 
 /** VERDE brand defaults — used as fallback when CMS value is missing/invalid. */
 export const CALENDAR_APPEARANCE_DEFAULTS: CalendarAppearance = {
@@ -179,6 +218,17 @@ export const CALENDAR_APPEARANCE_DEFAULTS: CalendarAppearance = {
   // Unreleased (month is draft or not yet created — owner has not opened these dates)
   unreleasedBackground: '#F1F3F5',
   unreleasedText:       '#98A2B3',
+
+  // Legend labels — current Czech wording as defaults
+  legendFree:                   'Volno',
+  legendLimited:                'Zbývají místa',
+  legendLastSpot:               'Poslední místo',
+  legendFull:                   'Plně obsazeno',
+  legendTemporarilyUnavailable: 'Dočasně nedostupné',
+  legendUnreleased:             'Neuvolněno k rezervaci',
+  legendSelected:               'Vybráno',
+  legendRange:                  'Rozsah',
+  legendToday:                  'Dnes',
 }
 
 // ─── Service catalogue DB types ───────────────────────────────────────────────

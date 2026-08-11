@@ -474,70 +474,76 @@ function MonthGrid({
 
 // ─── Legend ───────────────────────────────────────────────────────────────────
 
+interface LegendItem {
+  label: string
+  bg: string
+  text: string
+  /** Optional small capacity example — shown only where it adds meaning (limited / last spot). */
+  count?: string
+  /** Render as a hollow ring (today) instead of a filled chip. */
+  ring?: string
+}
+
+/** Small rounded color swatch — no fake day numbers, only an optional capacity example. */
+function LegendChip({ item }: { item: LegendItem }) {
+  if (item.ring) {
+    return (
+      <span
+        aria-hidden="true"
+        className="inline-flex size-5 shrink-0 rounded-full border-2 sm:size-6"
+        style={{ borderColor: item.ring, backgroundColor: 'transparent' }}
+      />
+    )
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold leading-none sm:size-6 sm:text-[10px]"
+      style={{ backgroundColor: item.bg, color: item.text }}
+    >
+      {item.count}
+    </span>
+  )
+}
+
+function LegendGroup({ title, items }: { title: string; items: LegendItem[] }) {
+  return (
+    <div role="list" aria-label={title} className="flex flex-col gap-2">
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-verde-stone/70">
+        {title}
+      </span>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
+        {items.map((item) => (
+          <div key={item.label} className="flex items-center gap-2" role="listitem">
+            <LegendChip item={item} />
+            <span className="text-xs text-verde-stone">{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function CalendarLegend({ appearance }: { appearance: CalendarAppearance }) {
-  const items = [
-    {
-      label: 'Volno',
-      bg: appearance.availableBackground,
-      text: appearance.availableText,
-      indicator: null,
-    },
-    {
-      label: 'Zbývají místa',
-      bg: appearance.limitedBackground,
-      text: appearance.limitedText,
-      indicator: '2',
-    },
-    {
-      label: 'Poslední místo',
-      bg: appearance.lastBackground,
-      text: appearance.lastText,
-      indicator: '1',
-    },
-    {
-      label: 'Plně obsazeno',
-      bg: appearance.fullBackground,
-      text: appearance.fullText,
-      indicator: '×',
-    },
-    {
-      label: 'Dočasně nedostupné',
-      bg: appearance.closedBackground,
-      text: appearance.closedText,
-      indicator: null,
-    },
-    {
-      label: 'Neuvolněno k rezervaci',
-      bg: appearance.unreleasedBackground,
-      text: appearance.unreleasedText,
-      indicator: null,
-    },
+  const availabilityItems: LegendItem[] = [
+    { label: appearance.legendFree, bg: appearance.availableBackground, text: appearance.availableText },
+    { label: appearance.legendLimited, bg: appearance.limitedBackground, text: appearance.limitedText, count: '2' },
+    { label: appearance.legendLastSpot, bg: appearance.lastBackground, text: appearance.lastText, count: '1' },
+    { label: appearance.legendFull, bg: appearance.fullBackground, text: appearance.fullText },
+    { label: appearance.legendTemporarilyUnavailable, bg: appearance.closedBackground, text: appearance.closedText },
+    { label: appearance.legendUnreleased, bg: appearance.unreleasedBackground, text: appearance.unreleasedText },
+  ]
+
+  const calendarStateItems: LegendItem[] = [
+    { label: appearance.legendSelected, bg: appearance.selectedBackground, text: appearance.selectedText },
+    { label: appearance.legendRange, bg: appearance.rangeBackground, text: appearance.availableText },
+    { label: appearance.legendToday, bg: 'transparent', text: '', ring: appearance.todayBorder },
   ]
 
   return (
-    <div
-      role="list"
-      aria-label="Legenda dostupnosti"
-      className="grid grid-cols-2 gap-x-3 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-4 sm:gap-y-2"
-    >
-      {items.map((item) => (
-        <div key={item.label} className="flex items-center gap-2" role="listitem">
-          {/* Mini sample cell — 28×28px on mobile, slightly larger on sm+ */}
-          <span
-            aria-hidden="true"
-            className="inline-flex size-7 shrink-0 flex-col items-center justify-center rounded-md border text-[9px] font-bold leading-none sm:size-8 sm:rounded-lg sm:text-[10px]"
-            style={{
-              backgroundColor: item.bg,
-              color: item.text,
-              borderColor: item.text + '33',
-            }}
-          >
-            <span>24</span>
-            {item.indicator && <span className="text-[7px] sm:text-[8px]">{item.indicator}</span>}
-          </span>
-          <span className="text-xs text-verde-stone">{item.label}</span>
-        </div>
-      ))}
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-center sm:gap-8">
+      <LegendGroup title="Dostupnost" items={availabilityItems} />
+      <LegendGroup title="Stav kalendáře" items={calendarStateItems} />
     </div>
   )
 }

@@ -4,7 +4,7 @@
  */
 
 import type { CalendarAppearance, ContactSettingsValue, FaqItem, GalleryImage, PriceItem, Testimonial } from '@/lib/types'
-import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
+import { CALENDAR_APPEARANCE_DEFAULTS, CALENDAR_APPEARANCE_COLOR_KEYS, CALENDAR_APPEARANCE_LABEL_KEYS } from '@/lib/types'
 import { faqItems as staticFaq } from '@/content/faq'
 import { priceItems as staticPrices } from '@/content/services'
 import { testimonials as staticTestimonials } from '@/content/home'
@@ -98,9 +98,15 @@ export async function getPublicCalendarAppearance(): Promise<CalendarAppearance>
   if (!db) return { ...CALENDAR_APPEARANCE_DEFAULTS }
 
   const result = { ...CALENDAR_APPEARANCE_DEFAULTS }
-  for (const key of Object.keys(CALENDAR_APPEARANCE_DEFAULTS) as (keyof CalendarAppearance)[]) {
+  for (const key of CALENDAR_APPEARANCE_COLOR_KEYS) {
     if (isValidHex(db[key])) {
       result[key] = db[key] as string
+    }
+  }
+  for (const key of CALENDAR_APPEARANCE_LABEL_KEYS) {
+    const val = db[key]
+    if (typeof val === 'string' && val.trim().length > 0) {
+      result[key] = val.trim()
     }
   }
   return result
