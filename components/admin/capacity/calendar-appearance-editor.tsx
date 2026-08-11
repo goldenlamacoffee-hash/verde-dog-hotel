@@ -4,7 +4,7 @@ import { useState, useTransition, useCallback } from 'react'
 import { Loader2, RotateCcw, Save, AlertTriangle } from 'lucide-react'
 import { updateSiteSetting } from '@/lib/admin/actions'
 import type { CalendarAppearance } from '@/lib/types'
-import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
+import { CALENDAR_APPEARANCE_DEFAULTS, CALENDAR_APPEARANCE_COLOR_KEYS } from '@/lib/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -113,6 +113,30 @@ const FIELD_GROUPS: { title: string; fields: FieldDef[] }[] = [
   },
 ]
 
+// ─── Legend label field definitions ──────────────────────────────────────────
+
+interface LegendLabelFieldDef {
+  key: keyof CalendarAppearance
+  label: string
+}
+
+/** Availability-state legend labels — shown on the public reservation calendar. */
+const LEGEND_LABEL_FIELDS_AVAILABILITY: LegendLabelFieldDef[] = [
+  { key: 'legendFree',                   label: 'Volno' },
+  { key: 'legendLimited',                 label: 'Zbývají místa' },
+  { key: 'legendLastSpot',                label: 'Poslední místo' },
+  { key: 'legendFull',                    label: 'Plně obsazeno' },
+  { key: 'legendTemporarilyUnavailable',  label: 'Dočasně nedostupné' },
+  { key: 'legendUnreleased',              label: 'Neuvolněno k rezervaci' },
+]
+
+/** Calendar-state legend labels — selection/range/today, not availability. */
+const LEGEND_LABEL_FIELDS_CALENDAR_STATE: LegendLabelFieldDef[] = [
+  { key: 'legendSelected', label: 'Vybráno' },
+  { key: 'legendRange',    label: 'Rozsah' },
+  { key: 'legendToday',    label: 'Dnes' },
+]
+
 // ─── Single color row ─────────────────────────────────────────────────────────
 
 interface ColorRowProps {
@@ -198,6 +222,43 @@ function ColorRow({ fieldLabel, value, bgForContrast, onChange }: ColorRowProps)
           <AlertTriangle className="size-3 shrink-0" aria-hidden="true" />
           Nízký kontrast
         </span>
+      )}
+    </div>
+  )
+}
+
+// ─── Legend label row ─────────────────────────────────────────────────────────
+
+interface LegendLabelRowProps {
+  fieldLabel: string
+  value: string
+  onChange: (val: string) => void
+}
+
+function LegendLabelRow({ fieldLabel, value, onChange }: LegendLabelRowProps) {
+  const empty = value.trim().length === 0
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-40 shrink-0 text-xs" style={{ color: 'var(--admin-text-muted)' }}>
+        {fieldLabel}
+      </span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={40}
+        placeholder={fieldLabel}
+        className="flex-1 rounded-lg border px-2 py-1 text-xs"
+        style={{
+          background: 'var(--admin-bg)',
+          borderColor: empty ? '#dc2626' : 'var(--admin-card-border)',
+          color: 'var(--admin-text)',
+        }}
+        aria-invalid={empty}
+      />
+      {empty && (
+        <span className="shrink-0 text-xs text-red-600">Povinné</span>
       )}
     </div>
   )
@@ -313,12 +374,17 @@ export function CalendarAppearanceEditor({ initialAppearance }: Props) {
   }
 
   function handleSave() {
-    // Validate all keys before saving
-    const invalidKeys = (Object.keys(app) as (keyof CalendarAppearance)[]).filter(
-      (k) => !isValidHex(app[k])
+    // Validate color keys as hex, label keys as non-empty text
+    const invalidColorKeys = CALENDAR_APPEARANCE_COLOR_KEYS.filter((k) => !isValidHex(app[k]))
+    if (invalidColorKeys.length > 0) {
+      setError(`Opravte neplatné barvy: ${invalidColorKeys.join(', ')}`)
+      return
+    }
+    const invalidLabelKeys = [...LEGEND_LABEL_FIELDS_AVAILABILITY, ...LEGEND_LABEL_FIELDS_CALENDAR_STATE].filter(
+      (f) => app[f.key].trim().length === 0
     )
-    if (invalidKeys.length > 0) {
-      setError(`Opravte neplatné barvy: ${invalidKeys.join(', ')}`)
+    if (invalidLabelKeys.length > 0) {
+      setError('Vyplňte všechny popisky legendy.')
       return
     }
     setError(null)
@@ -360,6 +426,42 @@ export function CalendarAppearanceEditor({ initialAppearance }: Props) {
             ))}
           </div>
         ))}
+      </div>
+
+      {/* Legend labels */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div
+          className="rounded-xl p-4 space-y-2.5"
+          style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)' }}
+        >
+          <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--admin-text-muted)' }}>
+            Popisky legendy — dostupnost
+          </h3>
+          {LEGEND_LABEL_FIELDS_AVAILABILITY.map((field) => (
+            <LegendLabelRow
+              key={field.key}
+              fieldLabel={field.label}
+              value={app[field.key]}
+              onChange={(val) => update(field.key, val)}
+            />
+          ))}
+        </div>
+        <div
+          className="rounded-xl p-4 space-y-2.5"
+          style={{ background: 'var(--admin-bg)', border: '1px solid var(--admin-card-border)' }}
+        >
+          <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--admin-text-muted)' }}>
+            Popisky legendy — stav kalendáře
+          </h3>
+          {LEGEND_LABEL_FIELDS_CALENDAR_STATE.map((field) => (
+            <LegendLabelRow
+              key={field.key}
+              fieldLabel={field.label}
+              value={app[field.key]}
+              onChange={(val) => update(field.key, val)}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Live preview */}

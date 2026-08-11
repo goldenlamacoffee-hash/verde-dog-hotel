@@ -7,7 +7,7 @@ import { CapacityOverridesPanel } from '@/components/admin/capacity/capacity-ove
 import { CalendarAppearanceEditor } from '@/components/admin/capacity/calendar-appearance-editor'
 import { MaximumStayEditor } from '@/components/admin/capacity/maximum-stay-editor'
 import { MonthPlanner } from '@/components/admin/capacity/month-planner'
-import { CALENDAR_APPEARANCE_DEFAULTS } from '@/lib/types'
+import { CALENDAR_APPEARANCE_DEFAULTS, CALENDAR_APPEARANCE_COLOR_KEYS, CALENDAR_APPEARANCE_LABEL_KEYS } from '@/lib/types'
 import type { CalendarAppearance } from '@/lib/types'
 
 /** Validate a single hex color value. */
@@ -20,8 +20,12 @@ function resolveAppearance(raw: unknown): CalendarAppearance {
   if (!raw || typeof raw !== 'object') return { ...CALENDAR_APPEARANCE_DEFAULTS }
   const db = raw as Record<string, unknown>
   const result = { ...CALENDAR_APPEARANCE_DEFAULTS }
-  for (const key of Object.keys(CALENDAR_APPEARANCE_DEFAULTS) as (keyof CalendarAppearance)[]) {
+  for (const key of CALENDAR_APPEARANCE_COLOR_KEYS) {
     if (isValidHex(db[key])) result[key] = db[key] as string
+  }
+  for (const key of CALENDAR_APPEARANCE_LABEL_KEYS) {
+    const val = db[key]
+    if (typeof val === 'string' && val.trim().length > 0) result[key] = val.trim()
   }
   return result
 }
