@@ -99,7 +99,7 @@ export async function updateSiteSetting(key: string, value: object) {
   if (error) throw new Error(error.message)
 
   // Always revalidate the admin page and global layout (covers footer on all pages)
-  revalidatePath('/admin/obsah')
+  revalidatePath('/admin/obsah', 'layout')
   revalidatePath('/', 'layout')
 
   // Revalidate specific public pages that render this setting
@@ -317,7 +317,7 @@ export async function upsertPageSection(data: {
     )
 
   if (error) throw new Error(error.message)
-  revalidatePath('/admin/obsah')
+  revalidatePath('/admin/obsah', 'layout')
 
   // `global` sections (header/footer) render inside the root layout on every
   // page, so revalidate the whole layout rather than a single route.
