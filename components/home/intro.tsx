@@ -36,7 +36,6 @@ export function Intro({ cms }: Props) {
             fill
             sizes="(min-width: 1024px) 40vw, 100vw"
             className="object-cover"
-            unoptimized={imageUrl.startsWith('http')}
           />
           <div className="absolute inset-0 ring-1 ring-inset ring-verde-deep/10" aria-hidden="true" />
         </div>

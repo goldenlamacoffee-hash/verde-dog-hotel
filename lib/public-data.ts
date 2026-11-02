@@ -20,7 +20,7 @@ export async function getPublicPageSection<T extends Record<string, unknown>>(
   sectionKey: string
 ): Promise<T | null> {
   try {
-    const { createClient } = await import('@/lib/supabase/server')
+    const { createClient } = await import('@/lib/supabase/public')
     const supabase = await createClient()
     const { data } = await supabase
       .from('page_sections')
@@ -41,7 +41,7 @@ export async function getPublicPageSection<T extends Record<string, unknown>>(
  */
 export async function getPublicPageSections(page: string): Promise<Record<string, Record<string, unknown>>> {
   try {
-    const { createClient } = await import('@/lib/supabase/server')
+    const { createClient } = await import('@/lib/supabase/public')
     const supabase = await createClient()
     const { data } = await supabase
       .from('page_sections')
@@ -68,7 +68,7 @@ export async function getPublicSiteSetting<T extends Record<string, unknown>>(
   key: string,
 ): Promise<T | null> {
   try {
-    const { createClient } = await import('@/lib/supabase/server')
+    const { createClient } = await import('@/lib/supabase/public')
     const supabase = await createClient()
     const { data } = await supabase
       .from('site_settings')
@@ -194,11 +194,11 @@ export async function getPublicContactSettings(): Promise<ContactSettingsValue> 
   }
 }
 
-// ─── FAQ ──────────────────────────────────────────────────────────────────────
+// ─── FAQ ──────────────────────────────────────────────��───────────────────────
 
 export async function getPublicFaq(): Promise<FaqItem[]> {
   try {
-    const { createClient } = await import('@/lib/supabase/server')
+    const { createClient } = await import('@/lib/supabase/public')
     const supabase = await createClient()
     const { data } = await supabase
       .from('faq_items')
@@ -221,7 +221,7 @@ const UNIT_MAP: Record<string, PriceItem['unit']> = {
 
 export async function getPublicPriceItems(): Promise<PriceItem[]> {
   try {
-    const { createClient } = await import('@/lib/supabase/server')
+    const { createClient } = await import('@/lib/supabase/public')
     const supabase = await createClient()
     const { data } = await supabase
       .from('services')
@@ -276,7 +276,7 @@ export interface ReservationService {
  */
 export async function getPublicServicesForReservation(): Promise<ReservationService[] | null> {
   try {
-    const { createClient } = await import('@/lib/supabase/server')
+    const { createClient } = await import('@/lib/supabase/public')
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('services')
@@ -313,7 +313,7 @@ export async function getPublicServicesForReservation(): Promise<ReservationServ
  */
 export async function getPublicGalleryImages(): Promise<GalleryImage[] | null> {
   try {
-    const { createClient } = await import('@/lib/supabase/server')
+    const { createClient } = await import('@/lib/supabase/public')
     const supabase = await createClient()
     const { data } = await supabase
       .from('gallery_items')
@@ -337,7 +337,7 @@ export async function getPublicGalleryImages(): Promise<GalleryImage[] | null> {
 
 export async function getPublicTestimonials(): Promise<Testimonial[]> {
   try {
-    const { createClient } = await import('@/lib/supabase/server')
+    const { createClient } = await import('@/lib/supabase/public')
     const supabase = await createClient()
     const { data } = await supabase
       .from('testimonials')
