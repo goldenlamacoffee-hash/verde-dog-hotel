@@ -2,6 +2,10 @@ import { SiteHeader } from '@/components/layout/site-header'
 import { SiteFooter } from '@/components/layout/site-footer'
 import { getPublicPageSection, getPublicSiteSetting } from '@/lib/public-data'
 
+// Public pages are prerendered and cached; this is the safety-net refresh interval.
+// Admin saves trigger instant revalidation via revalidatePath.
+export const revalidate = 300
+
 export default async function SiteLayout({
   children,
 }: {

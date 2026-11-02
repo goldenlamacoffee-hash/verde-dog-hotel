@@ -82,7 +82,6 @@ export function Accommodation({ cms }: Props) {
                     fill
                     sizes="(min-width: 768px) 33vw, 100vw"
                     className="object-cover transition-transform duration-500 group-hover:scale-105"
-                    unoptimized={card.image.startsWith('http')}
                   />
                 </div>
               )}

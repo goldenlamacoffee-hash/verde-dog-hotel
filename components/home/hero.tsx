@@ -24,7 +24,6 @@ export function Hero({ cms }: Props) {
         priority
         sizes="100vw"
         className="object-cover"
-        unoptimized={imageUrl.startsWith('http')}
       />
       <div
         className="absolute inset-0 bg-gradient-to-t from-verde-deep/95 via-verde-deep/70 to-verde-deep/35"
